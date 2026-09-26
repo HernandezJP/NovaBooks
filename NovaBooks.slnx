@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="NovaBooks.Api/NovaBooks.Api.csproj" />
+    <Project Path="NovaBooks.Application/NovaBooks.Application.csproj" />
+    <Project Path="NovaBooks.Domain/NovaBooks.Domain.csproj" />
+    <Project Path="NovaBooks.Infrastructure/NovaBooks.Infrastructure.csproj" />
+    <Project Path="NovaBooks.Web/NovaBooks.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="NovaBooks.IntegrationTests/NovaBooks.IntegrationTests.csproj" />
+    <Project Path="NovaBooks.UnitTests/NovaBooks.UnitTests.csproj" />
+  </Folder>
+</Solution>
