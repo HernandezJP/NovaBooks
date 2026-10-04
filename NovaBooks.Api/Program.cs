@@ -1,14 +1,21 @@
+using NovaBooks.Infrastructure;
+using NovaBooks.Infrastructure.Data;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
+// Controladores de la API
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+
+// OpenAPI
 builder.Services.AddOpenApi();
+
+// Base de datos, Identity, permisos e inicializador
+builder.Services.AddInfrastructure(
+    builder.Configuration);
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// OpenAPI solamente durante desarrollo
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -16,8 +23,21 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
+
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Migraciones, reinicio opcional y datos iniciales
+await using (AsyncServiceScope scope =
+    app.Services.CreateAsyncScope())
+{
+    DatabaseInitializer initializer =
+        scope.ServiceProvider
+            .GetRequiredService<DatabaseInitializer>();
+
+    await initializer.InitializeAsync();
+}
 
 app.Run();
