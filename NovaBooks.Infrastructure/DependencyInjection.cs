@@ -7,6 +7,8 @@ using NovaBooks.Infrastructure.Data;
 using NovaBooks.Infrastructure.Data.Identity;
 using NovaBooks.Infrastructure.Data.Options;
 using NovaBooks.Infrastructure.Security.Permissions;
+using NovaBooks.Application.Interfaces;
+using NovaBooks.Infrastructure.Services;
 
 namespace NovaBooks.Infrastructure;
 
@@ -97,7 +99,16 @@ public static class DependencyInjection
             IAuthorizationHandler,
             PermissionAuthorizationHandler>();
 
+        services.AddScoped<IUserService, UserService>();
+
+        services.AddScoped<IRoleService, RoleService>();
+
+        services.AddScoped<
+            IPermissionService,
+            PermissionService>();
+
         services.AddScoped<DatabaseInitializer>();
+
 
         return services;
     }

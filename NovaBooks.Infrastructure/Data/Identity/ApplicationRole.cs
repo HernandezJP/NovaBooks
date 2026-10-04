@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Identity;
 
 namespace NovaBooks.Infrastructure.Data.Identity
 {
-    public class ApplicationRole : IdentityRole<int>
+    public sealed class ApplicationRole : IdentityRole<int>
     {
         public string? ROL_Descripcion { get; set; }
 

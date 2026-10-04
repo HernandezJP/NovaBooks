@@ -11,13 +11,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference
-		  Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore"
-		  Version="10.0.12" />
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+		<PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.12" />
 
-		<PackageReference
-		  Include="Microsoft.EntityFrameworkCore.Design"
-		  Version="10.0.12">
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>
 				runtime; build; native; contentfiles;
@@ -25,22 +22,17 @@
 			</IncludeAssets>
 		</PackageReference>
 
-		<PackageReference
-		  Include="Microsoft.EntityFrameworkCore.SqlServer"
-		  Version="10.0.12" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference
-		  Include="..\NovaBooks.Application\NovaBooks.Application.csproj" />
+		<ProjectReference Include="..\NovaBooks.Application\NovaBooks.Application.csproj" />
 
-		<ProjectReference
-		  Include="..\NovaBooks.Domain\NovaBooks.Domain.csproj" />
+		<ProjectReference Include="..\NovaBooks.Domain\NovaBooks.Domain.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<Folder Include="Data\Migrations\" />
-		<Folder Include="Services\" />
 		<Folder Include="Repositories\" />
 	</ItemGroup>
 
