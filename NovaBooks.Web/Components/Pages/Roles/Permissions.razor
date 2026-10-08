@@ -1,0 +1,273 @@
+@page "/permisos"
+@attribute [RequirePermission(AppPermissions.RolesAssignPermissions)]
+@using NovaBooks.Application.DTOs.Permissions
+@using NovaBooks.Application.DTOs.Roles
+@inject PermissionsApi PermissionsApi
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@inject AuthService Auth
+
+<PageTitle>Permisos | NovaBooks</PageTitle>
+
+<PageHeader Title="Permisos"
+            Description="Seleccione un rol y marque los permisos que tendrá. La lista guardada reemplaza la anterior."
+            Breadcrumbs="_breadcrumbs" />
+
+<Panel Title="Permisos por rol" Subtitle="Marque los permisos y guarde los cambios." Icon="@Icons.Material.Outlined.Key">
+    @if (_rolesError is not null)
+    {
+        <ErrorState Title="No fue posible cargar los roles" Message="@_rolesError" OnRetry="LoadRolesAsync" />
+    }
+    else if (_roles is null)
+    {
+        <LoadingState Rows="2" />
+    }
+    else
+    {
+        <div class="list-toolbar">
+            <MudSelect T="int?" Value="_selectedRoleId" ValueChanged="SelectRoleAsync" Label="Rol"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Class="list-toolbar__search"
+                       Placeholder="Seleccione un rol">
+                @foreach (RoleResponse role in _roles)
+                {
+                    <MudSelectItem T="int?" Value="role.Id">
+                        @role.Name@(role.IsActive ? "" : " (inactivo)")
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (SelectedRole is not null && !SelectedRole.IsProtected)
+            {
+                <div class="list-toolbar__actions">
+                    <MudText Typo="Typo.caption" Class="cell-secondary">
+                        @_selected.Count de @TotalPermissions seleccionados
+                        @if (IsDirty)
+                        {
+                            <span class="dirty-indicator"> · cambios sin guardar</span>
+                        }
+                    </MudText>
+                    <MudButton Variant="Variant.Text" Disabled="@(!IsDirty || _saving)" OnClick="Discard">Descartar</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!IsDirty || _saving)"
+                               StartIcon="@Icons.Material.Filled.Save" OnClick="SaveAsync">
+                        @(_saving ? "Guardando…" : "Guardar permisos")
+                    </MudButton>
+                </div>
+            }
+        </div>
+
+        @if (SelectedRole is null)
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.Key" Title="Seleccione un rol"
+                        Message="Elija el rol cuyos permisos desea revisar o modificar." />
+        }
+        else
+        {
+            @if (SelectedRole.IsProtected)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                    Los permisos del rol Administrador están protegidos y no pueden modificarse.
+                </MudAlert>
+            }
+
+            @if (_groupsError is not null)
+            {
+                <ErrorState Title="No fue posible cargar el catálogo de permisos" Message="@_groupsError" OnRetry="LoadGroupsAsync" />
+            }
+            else if (_groups is null)
+            {
+                <LoadingState Rows="4" />
+            }
+            else
+            {
+                <div class="permission-grid">
+                    @foreach (PermissionGroupResponse group in _groups)
+                    {
+                        string[] codes = group.Permissions.Select(permission => permission.Code).ToArray();
+                        int selectedCount = codes.Count(_selected.Contains);
+
+                        <section class="permission-group" aria-label="@($"Permisos de {PermissionLabels.Humanize(group.Module)}")">
+                            <header class="permission-group__header">
+                                <MudCheckBox T="bool?" Value="GroupState(selectedCount, codes.Length)"
+                                             ValueChanged="(bool? value) => ToggleGroup(codes, value == true)"
+                                             Disabled="ReadOnly" Color="Color.Secondary" Dense="true">
+                                    <strong>@PermissionLabels.Humanize(group.Module)</strong>
+                                </MudCheckBox>
+                                <span class="cell-secondary">@selectedCount/@codes.Length</span>
+                            </header>
+                            @foreach (PermissionResponse permission in group.Permissions)
+                            {
+                                <MudCheckBox T="bool" Value="_selected.Contains(permission.Code)"
+                                             ValueChanged="(bool value) => Toggle(permission.Code, value)"
+                                             Disabled="ReadOnly" Color="Color.Secondary" Dense="true"
+                                             Class="permission-group__item">
+                                    @PermissionLabels.Humanize(permission.Action)
+                                </MudCheckBox>
+                            }
+                        </section>
+                    }
+                </div>
+            }
+        }
+    }
+</Panel>
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Configuración", null, disabled: true),
+        new("Permisos", null, disabled: true)
+    ];
+
+    [SupplyParameterFromQuery(Name = "rol")]
+    public int? RoleFromQuery { get; set; }
+
+    private List<RoleResponse>? _roles;
+    private List<PermissionGroupResponse>? _groups;
+    private string? _rolesError;
+    private string? _groupsError;
+    private int? _selectedRoleId;
+    private HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _original = new(StringComparer.OrdinalIgnoreCase);
+    private bool _saving;
+
+    private RoleResponse? SelectedRole => _roles?.FirstOrDefault(role => role.Id == _selectedRoleId);
+
+    private bool ReadOnly => SelectedRole?.IsProtected != false || _saving;
+
+    private bool IsDirty => !_selected.SetEquals(_original);
+
+    private int TotalPermissions => _groups?.Sum(group => group.Permissions.Count) ?? 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Roles y catálogo se cargan en paralelo con estados independientes.
+        await Task.WhenAll(LoadRolesAsync(), LoadGroupsAsync());
+    }
+
+    private async Task LoadRolesAsync()
+    {
+        _rolesError = null;
+
+        ApiResult<List<RoleResponse>> result = await PermissionsApi.GetRolesAsync();
+
+        if (!result.Succeeded)
+        {
+            _rolesError = result.Message;
+            return;
+        }
+
+        _roles = result.Data ?? [];
+
+        int? roleId = _selectedRoleId ?? RoleFromQuery;
+
+        if (roleId is not null && _roles.Any(role => role.Id == roleId))
+        {
+            ApplyRole(roleId);
+        }
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        _groupsError = null;
+
+        ApiResult<List<PermissionGroupResponse>> result = await PermissionsApi.GetGroupedAsync();
+
+        if (result.Succeeded)
+        {
+            _groups = result.Data ?? [];
+        }
+        else
+        {
+            _groupsError = result.Message;
+        }
+    }
+
+    private async Task SelectRoleAsync(int? roleId)
+    {
+        if (IsDirty)
+        {
+            bool discard = await Dialogs.ConfirmAsync(
+                "Cambios sin guardar",
+                "Hay cambios sin guardar en el rol actual. ¿Desea descartarlos?",
+                "Descartar",
+                Color.Warning);
+
+            if (!discard)
+            {
+                return;
+            }
+        }
+
+        ApplyRole(roleId);
+    }
+
+    private void ApplyRole(int? roleId)
+    {
+        _selectedRoleId = roleId;
+        _original = new HashSet<string>(
+            SelectedRole?.Permissions ?? [],
+            StringComparer.OrdinalIgnoreCase);
+        _selected = new HashSet<string>(_original, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool? GroupState(int selected, int total) =>
+        selected == 0 ? false : selected == total ? true : null;
+
+    private void Toggle(string code, bool value)
+    {
+        if (value)
+        {
+            _selected.Add(code);
+        }
+        else
+        {
+            _selected.Remove(code);
+        }
+    }
+
+    private void ToggleGroup(IEnumerable<string> codes, bool value)
+    {
+        foreach (string code in codes)
+        {
+            Toggle(code, value);
+        }
+    }
+
+    private void Discard()
+    {
+        _selected = new HashSet<string>(_original, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || SelectedRole is not { } role)
+        {
+            return;
+        }
+
+        _saving = true;
+
+        try
+        {
+            ApiResult<RoleResponse> result = await PermissionsApi.AssignAsync(role.Id, _selected);
+
+            if (result.Succeeded && result.Data is not null)
+            {
+                int index = _roles!.FindIndex(item => item.Id == role.Id);
+                _roles[index] = result.Data;
+                ApplyRole(role.Id);
+                Snackbar.Add($"Permisos del rol {role.Name} guardados.", Severity.Success);
+                await Auth.RefreshUserAsync();
+            }
+            else
+            {
+                Snackbar.Add(result.Message, Severity.Error);
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

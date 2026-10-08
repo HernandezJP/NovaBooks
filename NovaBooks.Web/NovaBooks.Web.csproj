@@ -11,4 +11,9 @@
     <PackageReference Include="MudBlazor" Version="9.10.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Solo contratos (DTO); la Web consume la API por HTTP. -->
+    <ProjectReference Include="..\NovaBooks.Application\NovaBooks.Application.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -1,0 +1,81 @@
+@using System.Reflection
+@implements IDisposable
+@inject SessionState Session
+@inject AuthService Auth
+
+@* Protege cada ruta: sin sesión redirige al login y sin permiso muestra
+   acceso denegado, aunque se entre escribiendo la URL. La API vuelve a
+   validar los permisos en cada solicitud. *@
+
+@if (_allowAnonymous)
+{
+    <RouteView RouteData="RouteData" DefaultLayout="typeof(MainLayout)" />
+}
+else if (!Session.IsInitialized)
+{
+    <div class="app-loading" role="status" aria-live="polite">
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Medium" />
+        <span>Cargando NovaBooks…</span>
+    </div>
+}
+else if (!Session.IsAuthenticated)
+{
+    <RedirectToLogin />
+}
+else if (_permission is not null && !Session.HasPermission(_permission))
+{
+    <LayoutView Layout="typeof(MainLayout)">
+        <AccessDenied Permission="@_permission" />
+    </LayoutView>
+}
+else
+{
+    <RouteView RouteData="RouteData" DefaultLayout="typeof(MainLayout)" />
+    <FocusOnNavigate RouteData="RouteData" Selector="h1" />
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public RouteData RouteData { get; set; } = default!;
+
+    private bool _allowAnonymous;
+    private string? _permission;
+
+    // OnInitializedAsync renderiza antes de OnParametersSet; las reglas de
+    // acceso deben estar listas desde el primer render.
+    protected override void OnInitialized() => ReadPageAccess();
+
+    protected override void OnParametersSet() => ReadPageAccess();
+
+    private void ReadPageAccess()
+    {
+        Type pageType = RouteData.PageType;
+
+        _allowAnonymous =
+            pageType.GetCustomAttribute<AllowAnonymousPageAttribute>() is not null;
+
+        _permission =
+            pageType.GetCustomAttribute<RequirePermissionAttribute>()?.Permission;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+
+        // ProtectedSessionStorage necesita un circuito interactivo.
+        if (RendererInfo.IsInteractive)
+        {
+            await Auth.RestoreAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+    }
+
+    private void OnSessionChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+}

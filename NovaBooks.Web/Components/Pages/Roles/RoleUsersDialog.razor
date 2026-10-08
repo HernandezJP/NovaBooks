@@ -1,0 +1,75 @@
+@using NovaBooks.Application.DTOs.Roles
+@inject RolesApi RolesApi
+
+<MudDialog>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <ErrorState Message="@_error" OnRetry="LoadAsync" />
+        }
+        else if (_users is null)
+        {
+            <LoadingState Rows="3" />
+        }
+        else if (_users.Count == 0)
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.PersonOff" Title="Sin usuarios asignados"
+                        Message="Ningún usuario tiene este rol." />
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Hover="true" Elevation="0" Class="nb-table">
+                <thead>
+                    <tr><th>Usuario</th><th>Estado</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (RoleUserResponse user in _users)
+                    {
+                        <tr>
+                            <td>
+                                <div class="cell-primary">@user.UserName</div>
+                                <div class="cell-secondary">@user.Email</div>
+                            </td>
+                            <td><StatusChip IsActive="user.IsActive" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Close">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public RoleResponse Role { get; set; } = default!;
+
+    private List<RoleUserResponse>? _users;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _users = null;
+
+        ApiResult<List<RoleUserResponse>> result = await RolesApi.GetUsersAsync(Role.Id);
+
+        if (result.Succeeded)
+        {
+            _users = result.Data ?? [];
+        }
+        else
+        {
+            _error = result.Message;
+        }
+    }
+
+    private void Close() => Dialog.Close();
+}

@@ -6,7 +6,15 @@ public sealed class RoleResponse
 
     public string Name { get; set; } = string.Empty;
 
+    public string? Description { get; set; }
+
     public bool IsActive { get; set; }
+
+    /// <summary>
+    /// Rol protegido (Administrador): no se renombra, no se
+    /// desactiva y sus permisos no se modifican.
+    /// </summary>
+    public bool IsProtected { get; set; }
 
     public int UsersCount { get; set; }
 

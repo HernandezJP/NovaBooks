@@ -1,10 +1,14 @@
 using Microsoft.OpenApi;
+using NovaBooks.Api.ErrorHandling;
 using NovaBooks.Infrastructure;
-using NovaBooks.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
+builder.Services.AddProblemDetails();
+
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -50,6 +54,10 @@ builder.Services.AddJwtAuthentication(
 
 var app = builder.Build();
 
+app.UseExceptionHandler();
+
+app.UseStatusCodePages();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -67,19 +75,13 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseMiddleware<DatabaseReadinessMiddleware>();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
-await using (AsyncServiceScope scope =
-    app.Services.CreateAsyncScope())
-{
-    DatabaseInitializer initializer =
-        scope.ServiceProvider
-            .GetRequiredService<DatabaseInitializer>();
-
-    await initializer.InitializeAsync();
-}
-
 app.Run();
+
+public partial class Program;

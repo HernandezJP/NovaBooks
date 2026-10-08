@@ -1,0 +1,135 @@
+@using NovaBooks.Application.DTOs.Roles
+@using NovaBooks.Application.DTOs.Users
+@inject UsersApi UsersApi
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Seleccione los roles de <strong>@User.UserName</strong>. La lista reemplaza los roles actuales.
+        </MudText>
+
+        <FormErrors Result="_saveResult" />
+
+        @if (_error is not null)
+        {
+            <ErrorState Message="@_error" OnRetry="LoadAsync" />
+        }
+        else if (_roles is null)
+        {
+            <LoadingState Rows="3" />
+        }
+        else if (_roles.Count == 0)
+        {
+            <EmptyState Title="No hay roles activos" Message="Cree o active un rol antes de asignarlo." />
+        }
+        else
+        {
+            <div class="check-list">
+                @foreach (RoleOptionResponse role in _roles)
+                {
+                    <div class="check-list__item">
+                        <MudCheckBox T="bool" Value="_selected.Contains(role.Name)"
+                                     ValueChanged="(bool value) => Toggle(role.Name, value)"
+                                     Color="Color.Secondary" Dense="true">
+                            <span class="cell-primary">@role.Name</span>
+                        </MudCheckBox>
+                        @if (!string.IsNullOrWhiteSpace(role.Description))
+                        {
+                            <div class="cell-secondary check-list__description">@role.Description</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync"
+                   Disabled="@(_saving || _roles is null)">
+            @if (_saving)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Guardar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public UserResponse User { get; set; } = default!;
+
+    private HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private List<RoleOptionResponse>? _roles;
+    private string? _error;
+    private bool _saving;
+    private IApiResultView? _saveResult;
+
+    protected override Task OnInitializedAsync()
+    {
+        _selected = new HashSet<string>(User.Roles, StringComparer.OrdinalIgnoreCase);
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        _roles = null;
+
+        ApiResult<List<RoleOptionResponse>> result = await UsersApi.GetAssignableRolesAsync();
+
+        if (result.Succeeded)
+        {
+            _roles = result.Data ?? [];
+        }
+        else
+        {
+            _error = result.Message;
+        }
+    }
+
+    private void Toggle(string role, bool selected)
+    {
+        if (selected)
+        {
+            _selected.Add(role);
+        }
+        else
+        {
+            _selected.Remove(role);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<UserResponse> result = await UsersApi.AssignRolesAsync(User.Id, _selected);
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() => Dialog.Cancel();
+}

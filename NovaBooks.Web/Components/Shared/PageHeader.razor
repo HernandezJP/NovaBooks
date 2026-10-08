@@ -1,0 +1,28 @@
+<header class="page-header">
+    <div class="page-header__text">
+        <MudText Typo="Typo.h5" HtmlTag="h1" Class="page-header__title">@Title</MudText>
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <MudText Typo="Typo.body2" Class="page-header__description">@Description</MudText>
+        }
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="page-header__actions">@Actions</div>
+    }
+</header>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Description { get; set; }
+
+    /// <summary>Se conserva por compatibilidad; el diseño no muestra migas de pan.</summary>
+    [Parameter]
+    public List<BreadcrumbItem>? Breadcrumbs { get; set; }
+
+    [Parameter]
+    public RenderFragment? Actions { get; set; }
+}

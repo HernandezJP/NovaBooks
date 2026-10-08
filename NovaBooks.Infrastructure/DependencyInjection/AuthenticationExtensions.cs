@@ -24,7 +24,9 @@ public static class AuthenticationExtensions
         if (string.IsNullOrWhiteSpace(jwtOptions.SecretKey))
         {
             throw new InvalidOperationException(
-                "No se configuró Jwt:SecretKey.");
+                "No se configuró Jwt:SecretKey. En desarrollo use " +
+                "'dotnet user-secrets set \"Jwt:SecretKey\" <clave>' " +
+                "en NovaBooks.Api.");
         }
 
         if (jwtOptions.SecretKey.Length < 32)
@@ -51,8 +53,18 @@ public static class AuthenticationExtensions
             })
             .AddJwtBearer(options =>
             {
-                options.RequireHttpsMetadata = false;
-                options.SaveToken = true;
+                options.RequireHttpsMetadata = true;
+                options.SaveToken = false;
+                options.MapInboundClaims = false;
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated =
+                        JwtSessionValidator.OnTokenValidatedAsync,
+
+                    OnChallenge =
+                        JwtSessionValidator.OnChallengeAsync
+                };
 
                 options.TokenValidationParameters =
                     new TokenValidationParameters
@@ -80,9 +92,9 @@ public static class AuthenticationExtensions
                     };
             });
 
-        services.AddAuthorization();
-
         services.AddScoped<IJwtTokenService, JwtTokenService>();
+
+        services.AddScoped<IUserAccessService, UserAccessService>();
 
         services.AddScoped<
             IAuthenticationService,

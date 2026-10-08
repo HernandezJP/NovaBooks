@@ -1,0 +1,331 @@
+@page "/clientes/nuevo"
+@page "/clientes/{Id:int}"
+@attribute [RequirePermission(AppPermissions.CustomersView)]
+@using NovaBooks.Application.DTOs.Customers
+@inject CustomersApi CustomersApi
+@inject SessionState Session
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>@PageTitleText | NovaBooks</PageTitle>
+
+@if (IsCreate && !Session.HasPermission(AppPermissions.CustomersCreate))
+{
+    <AccessDenied Permission="@AppPermissions.CustomersCreate" />
+}
+else
+{
+    <PageHeader Title="@PageTitleText" Breadcrumbs="_breadcrumbs"
+                Description="@(IsCreate ? "Registre los datos generales, la identificación y las condiciones de crédito." : _customer?.Code)">
+        <Actions>
+            @if (!IsCreate && _customer is not null)
+            {
+                <StatusChip IsActive="_customer.IsActive" />
+            }
+        </Actions>
+    </PageHeader>
+
+    @if (_loadError is not null)
+    {
+        <div class="panel">
+            <ErrorState Title="No fue posible cargar el cliente" Message="@_loadError" OnRetry="LoadAsync" />
+        </div>
+    }
+    else if (_catalogs is null || (!IsCreate && _customer is null))
+    {
+        <div class="panel"><LoadingState Rows="6" /></div>
+    }
+    else
+    {
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmitAsync">
+            <DataAnnotationsValidator />
+            <ServerValidator Result="_saveResult" />
+
+            <div class="panel">
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+                @if (ReadOnly)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                        Está viendo el cliente en modo de solo lectura.
+                    </MudAlert>
+                }
+
+                <fieldset disabled="@(ReadOnly || _saving)" class="form-fieldset">
+                    <div class="form-section">
+                        <div class="form-section__title">Datos generales</div>
+                        <div class="form-grid">
+                            <MudSelect T="string" @bind-Value="_model.PersonType" Label="Tipo de persona *"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                                       Disabled="@(!IsCreate || ReadOnly)"
+                                       HelperText="@(IsCreate ? null : "No puede cambiarse en un cliente existente.")">
+                                @foreach (var type in _catalogs.PersonTypes)
+                                {
+                                    <MudSelectItem T="string" Value="type.Code">@type.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudTextField T="string" Value="@(_customer?.Code ?? "Se asignará al guardar")" Label="Código"
+                                          HelperText="Lo asigna el sistema automáticamente."
+                                          ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+
+                            @if (IsLegal)
+                            {
+                                <MudTextField @bind-Value="_model.LegalName" For="@(() => _model.LegalName)"
+                                              Label="Razón social *" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                <MudTextField @bind-Value="_model.TradeName" For="@(() => _model.TradeName)"
+                                              Label="Nombre comercial" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                            }
+                            else
+                            {
+                                <MudTextField @bind-Value="_model.FirstName" For="@(() => _model.FirstName)"
+                                              Label="Primer nombre *" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                <MudTextField @bind-Value="_model.MiddleName" For="@(() => _model.MiddleName)"
+                                              Label="Segundo nombre" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                <MudTextField @bind-Value="_model.LastName" For="@(() => _model.LastName)"
+                                              Label="Primer apellido *" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                <MudTextField @bind-Value="_model.SecondLastName" For="@(() => _model.SecondLastName)"
+                                              Label="Segundo apellido" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                <MudDatePicker @bind-Date="BirthDate" Label="Fecha de nacimiento"
+                                               Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd/MM/yyyy"
+                                               MaxDate="DateTime.Today" ReadOnly="ReadOnly" Editable="true" />
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="form-section__title">Identificación</div>
+                        <div class="form-grid">
+                            <MudTextField @bind-Value="_model.Nit" For="@(() => _model.Nit)"
+                                          Label="@(IsLegal ? "NIT *" : "NIT")"
+                                          HelperText="Sin guiones o con guion antes del dígito verificador."
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                            <div></div>
+                            <MudSelect T="int?" @bind-Value="_model.IdentificationTypeId" Label="Documento"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" ReadOnly="ReadOnly">
+                                @foreach (var type in _catalogs.IdentificationTypes)
+                                {
+                                    <MudSelectItem T="int?" Value="type.Id">@type.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudTextField @bind-Value="_model.IdentificationNumber" For="@(() => _model.IdentificationNumber)"
+                                          Label="Número de documento" HelperText="@IdentificationHelp"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="form-section__title">Contacto</div>
+                        <div class="form-grid">
+                            <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)" Label="Correo electrónico"
+                                          InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                            <MudSelect T="int?" @bind-Value="_model.PhoneTypeId" For="@(() => _model.PhoneTypeId)" Label="Tipo de teléfono"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" ReadOnly="ReadOnly">
+                                @foreach (var type in _catalogs.PhoneTypes)
+                                {
+                                    <MudSelectItem T="int?" Value="type.Id">@type.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudTextField @bind-Value="_model.Phone" For="@(() => _model.Phone)" Label="Teléfono"
+                                          InputType="InputType.Telephone" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                            <MudTextField @bind-Value="_model.PhoneExtension" For="@(() => _model.PhoneExtension)" Label="Extensión"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                        </div>
+                        @if (!IsCreate)
+                        {
+                            <MudText Typo="Typo.caption" Class="cell-secondary mt-1">
+                                Al cambiar un dato de contacto, el anterior queda inactivo en el historial.
+                            </MudText>
+                        }
+                    </div>
+
+                    <div class="form-section">
+                        <div class="form-section__title">Crédito y observaciones</div>
+                        <div class="form-grid">
+                            <MudNumericField T="decimal" @bind-Value="_model.CreditLimit" For="@(() => _model.CreditLimit)"
+                                             Label="Límite de crédito" Min="0m" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             Format="N2" HideSpinButtons="true" ReadOnly="ReadOnly" />
+                            <MudNumericField T="int" @bind-Value="_model.CreditDays" For="@(() => _model.CreditDays)"
+                                             Label="Días de crédito" Min="0" Max="365" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             ReadOnly="ReadOnly" />
+                        </div>
+                        <MudTextField @bind-Value="_model.Notes" For="@(() => _model.Notes)" Label="Observaciones" Counter="1000" MaxLength="1000"
+                                      Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3" ReadOnly="ReadOnly" />
+                    </div>
+                </fieldset>
+
+                <div class="form-actions">
+                    <MudButton Href="/clientes" Variant="Variant.Text" Disabled="_saving">
+                        @(ReadOnly ? "Volver" : "Cancelar")
+                    </MudButton>
+                    @if (!ReadOnly)
+                    {
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Save" Disabled="_saving">
+                            @(_saving ? "Guardando…" : "Guardar")
+                        </MudButton>
+                    }
+                </div>
+            </div>
+        </EditForm>
+    }
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private SaveCustomerRequest _model = new();
+    private CustomerResponse? _customer;
+    private CustomerCatalogsResponse? _catalogs;
+    private string? _loadError;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+    private List<BreadcrumbItem> _breadcrumbs = [];
+
+    private bool IsCreate => Id is null;
+
+    private bool IsLegal => _model.PersonType == SaveCustomerRequest.LegalPerson;
+
+    private bool ReadOnly => !IsCreate && !Session.HasPermission(AppPermissions.CustomersUpdate);
+
+    private string PageTitleText =>
+        IsCreate ? "Nuevo cliente" : _customer?.DisplayName ?? "Cliente";
+
+    private string? IdentificationHelp =>
+        _catalogs?.IdentificationTypes.FirstOrDefault(type => type.Id == _model.IdentificationTypeId) is { } type
+            ? type.MinLength == type.MaxLength
+                ? $"{type.MinLength} caracteres."
+                : $"Entre {type.MinLength} y {type.MaxLength} caracteres."
+            : null;
+
+    private DateTime? BirthDate
+    {
+        get => _model.BirthDate?.ToDateTime(TimeOnly.MinValue);
+        set => _model.BirthDate = value is null ? null : DateOnly.FromDateTime(value.Value);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _breadcrumbs =
+        [
+            new("Inicio", "/"),
+            new("Clientes", "/clientes"),
+            new(IsCreate ? "Nuevo" : "Detalle", null, disabled: true)
+        ];
+
+        if (IsCreate && !Session.HasPermission(AppPermissions.CustomersCreate))
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+
+        // Catálogos y cliente se piden en paralelo.
+        Task<ApiResult<CustomerCatalogsResponse>> catalogsTask = CustomersApi.GetCatalogsAsync();
+        Task<ApiResult<CustomerResponse>>? customerTask = IsCreate ? null : CustomersApi.GetAsync(Id!.Value);
+
+        ApiResult<CustomerCatalogsResponse> catalogs = await catalogsTask;
+
+        if (!catalogs.Succeeded)
+        {
+            _loadError = catalogs.Message;
+            return;
+        }
+
+        _catalogs = catalogs.Data;
+
+        if (customerTask is null)
+        {
+            _model = new SaveCustomerRequest { PersonType = SaveCustomerRequest.NaturalPerson };
+            return;
+        }
+
+        ApiResult<CustomerResponse> customer = await customerTask;
+
+        if (!customer.Succeeded || customer.Data is null)
+        {
+            _loadError = customer.Message;
+            return;
+        }
+
+        SetCustomer(customer.Data);
+    }
+
+    private void SetCustomer(CustomerResponse customer)
+    {
+        _customer = customer;
+        _model = new SaveCustomerRequest
+        {
+            PersonType = customer.PersonType,
+            FirstName = customer.FirstName,
+            MiddleName = customer.MiddleName,
+            LastName = customer.LastName,
+            SecondLastName = customer.SecondLastName,
+            BirthDate = customer.BirthDate,
+            LegalName = customer.LegalName,
+            TradeName = customer.TradeName,
+            IdentificationTypeId = customer.IdentificationTypeId,
+            IdentificationNumber = customer.IdentificationNumber,
+            Nit = customer.Nit,
+            Email = customer.Email,
+            PhoneTypeId = customer.PhoneTypeId,
+            Phone = customer.Phone,
+            PhoneExtension = customer.PhoneExtension,
+            CreditLimit = customer.CreditLimit,
+            CreditDays = customer.CreditDays,
+            Notes = customer.Notes
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || ReadOnly)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<CustomerResponse> result = IsCreate
+                ? await CustomersApi.CreateAsync(_model)
+                : await CustomersApi.UpdateAsync(Id!.Value, _model);
+
+            if (!result.Succeeded || result.Data is null)
+            {
+                _saveResult = result;
+                return;
+            }
+
+            Snackbar.Add(
+                IsCreate ? $"Cliente {result.Data.Code} creado." : $"Cliente {result.Data.Code} actualizado.",
+                Severity.Success);
+
+            // Al guardar se regresa al listado.
+            Navigation.NavigateTo("/clientes");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task OnInvalidSubmitAsync()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("novaBooks.scrollToFirstError");
+    }
+}

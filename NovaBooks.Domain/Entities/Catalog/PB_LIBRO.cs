@@ -46,6 +46,12 @@ namespace NovaBooks.Domain.Entities.Catalog
 
         public string? LIB_RutaImagen { get; set; }
 
+        /// <summary>
+        /// Costo de referencia para cálculos de margen. No sustituye los
+        /// costos históricos de lotes o compras.
+        /// </summary>
+        public decimal LIB_CostoReferencia { get; set; }
+
         public bool LIB_PermiteVenta { get; set; } = true;
 
         public bool LIB_Activo { get; set; } = true;

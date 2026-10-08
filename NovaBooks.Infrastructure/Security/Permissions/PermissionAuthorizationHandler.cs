@@ -1,6 +1,3 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
 using Microsoft.AspNetCore.Authorization;
 
 namespace NovaBooks.Infrastructure.Security.Permissions
@@ -14,7 +11,7 @@ namespace NovaBooks.Infrastructure.Security.Permissions
         {
             bool hasPermission = context.User.Claims.Any(claim =>
                 claim.Type == CustomClaimTypes.Permission &&
-                claim.Value == requirement.Permission);
+                requirement.Permissions.Contains(claim.Value));
 
             if (hasPermission)
             {

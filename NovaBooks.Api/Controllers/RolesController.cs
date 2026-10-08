@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
+using NovaBooks.Api.Common;
 using NovaBooks.Application.Common;
 using NovaBooks.Application.DTOs.Roles;
 using NovaBooks.Application.Interfaces;
@@ -18,7 +19,7 @@ public sealed class RolesController : ControllerBase
         _roleService = roleService;
     }
 
-    [HasPermission("Roles.Ver")]
+    [HasPermission(RolePermissions.View)]
     [HttpGet]
     [ProducesResponseType(
         typeof(IReadOnlyCollection<RoleResponse>),
@@ -27,19 +28,17 @@ public sealed class RolesController : ControllerBase
         ActionResult<IReadOnlyCollection<RoleResponse>>> GetAll(
             CancellationToken cancellationToken)
     {
-        IReadOnlyCollection<RoleResponse> roles =
-            await _roleService.GetAllAsync(
-                cancellationToken);
-
-        return Ok(roles);
+        return Ok(await _roleService.GetAllAsync(
+            cancellationToken));
     }
 
-    [HasPermission("Roles.Ver")]
+    [HasPermission(RolePermissions.View)]
     [HttpGet("{id:int}")]
     [ProducesResponseType(
         typeof(RoleResponse),
         StatusCodes.Status200OK)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status404NotFound)]
     public async Task<ActionResult<RoleResponse>> GetById(
         int id,
@@ -52,38 +51,59 @@ public sealed class RolesController : ControllerBase
 
         if (role is null)
         {
-            return NotFound(new
-            {
-                message =
-                    "El rol solicitado no existe."
-            });
+            return this.NotFoundProblem(
+                "El rol solicitado no existe.");
         }
 
         return Ok(role);
     }
 
-    [HasPermission("Roles.Crear")]
+    [HasPermission(RolePermissions.View)]
+    [HttpGet("{id:int}/usuarios")]
+    [ProducesResponseType(
+        typeof(IReadOnlyCollection<RoleUserResponse>),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status404NotFound)]
+    public async Task<
+        ActionResult<IReadOnlyCollection<RoleUserResponse>>> GetUsers(
+            int id,
+            CancellationToken cancellationToken)
+    {
+        OperationResult<IReadOnlyCollection<RoleUserResponse>> result =
+            await _roleService.GetUsersAsync(
+                id,
+                cancellationToken);
+
+        return result.Succeeded
+            ? Ok(result.Data)
+            : this.OperationProblem(result);
+    }
+
+    [HasPermission(RolePermissions.Create)]
     [HttpPost]
     [ProducesResponseType(
         typeof(RoleResponse),
         StatusCodes.Status201Created)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status409Conflict)]
     public async Task<ActionResult<RoleResponse>> Create(
         [FromBody] CreateRoleRequest request,
         CancellationToken cancellationToken)
     {
-        RoleOperationResult<RoleResponse> result =
+        OperationResult<RoleResponse> result =
             await _roleService.CreateAsync(
                 request,
                 cancellationToken);
 
         if (!result.Succeeded)
         {
-            return BadRequest(new
-            {
-                errors = result.Errors
-            });
+            return this.OperationProblem(result);
         }
 
         return CreatedAtAction(
@@ -95,108 +115,130 @@ public sealed class RolesController : ControllerBase
             result.Data);
     }
 
-    [HasPermission("Roles.Modificar")]
+    [HasPermission(RolePermissions.Update)]
     [HttpPut("{id:int}")]
     [ProducesResponseType(
         typeof(RoleResponse),
         StatusCodes.Status200OK)]
     [ProducesResponseType(
-        StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status404NotFound)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status409Conflict)]
     public async Task<ActionResult<RoleResponse>> Update(
         int id,
         [FromBody] UpdateRoleRequest request,
         CancellationToken cancellationToken)
     {
-        RoleOperationResult<RoleResponse> result =
+        return FromResult(
             await _roleService.UpdateAsync(
                 id,
                 request,
-                cancellationToken);
-
-        return FromResult(result);
+                cancellationToken));
     }
 
-    [HasPermission("Roles.Eliminar")]
+    /// <summary>
+    /// Desactivación lógica del rol (ROL_Activo = false).
+    /// </summary>
+    [HasPermission(RolePermissions.Delete)]
     [HttpDelete("{id:int}")]
     [ProducesResponseType(
         StatusCodes.Status204NoContent)]
     [ProducesResponseType(
-        StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status404NotFound)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(
         int id,
         CancellationToken cancellationToken)
     {
-        RoleOperationResult<bool> result =
-            await _roleService.DeleteAsync(
+        OperationResult<RoleResponse> result =
+            await _roleService.ChangeStatusAsync(
                 id,
+                isActive: false,
                 cancellationToken);
 
-        if (result.NotFound)
-        {
-            return NotFound(new
-            {
-                errors = result.Errors
-            });
-        }
-
-        if (!result.Succeeded)
-        {
-            return BadRequest(new
-            {
-                errors = result.Errors
-            });
-        }
-
-        return NoContent();
+        return result.Succeeded
+            ? NoContent()
+            : this.OperationProblem(result);
     }
 
-    [HasPermission("Roles.AsignarPermisos")]
+    /// <summary>
+    /// Reactivar requiere Roles.Modificar; desactivar, Roles.Eliminar.
+    /// </summary>
+    [HasAnyPermission(
+        RolePermissions.Update,
+        RolePermissions.Delete)]
+    [HttpPatch("{id:int}/estado")]
+    [ProducesResponseType(
+        typeof(RoleResponse),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status404NotFound)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<RoleResponse>> ChangeStatus(
+        int id,
+        [FromBody] ChangeRoleStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        string required = request.IsActive
+            ? RolePermissions.Update
+            : RolePermissions.Delete;
+
+        if (!this.HasPermission(required))
+        {
+            return this.ForbiddenProblem(
+                $"Se requiere el permiso {required}.");
+        }
+
+        return FromResult(
+            await _roleService.ChangeStatusAsync(
+                id,
+                request.IsActive,
+                cancellationToken));
+    }
+
+    [HasPermission(RolePermissions.AssignPermissions)]
     [HttpPut("{id:int}/permisos")]
     [ProducesResponseType(
         typeof(RoleResponse),
         StatusCodes.Status200OK)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status400BadRequest)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status404NotFound)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status409Conflict)]
     public async Task<ActionResult<RoleResponse>>
         AssignPermissions(
             int id,
             [FromBody] AssignRolePermissionsRequest request,
             CancellationToken cancellationToken)
     {
-        RoleOperationResult<RoleResponse> result =
+        return FromResult(
             await _roleService.AssignPermissionsAsync(
                 id,
                 request,
-                cancellationToken);
-
-        return FromResult(result);
+                cancellationToken));
     }
 
     private ActionResult<RoleResponse> FromResult(
-        RoleOperationResult<RoleResponse> result)
+        OperationResult<RoleResponse> result)
     {
-        if (result.NotFound)
-        {
-            return NotFound(new
-            {
-                errors = result.Errors
-            });
-        }
-
-        if (!result.Succeeded)
-        {
-            return BadRequest(new
-            {
-                errors = result.Errors
-            });
-        }
-
-        return Ok(result.Data);
+        return result.Succeeded
+            ? Ok(result.Data)
+            : this.OperationProblem(result);
     }
 }

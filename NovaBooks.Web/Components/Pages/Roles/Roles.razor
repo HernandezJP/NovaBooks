@@ -1,0 +1,246 @@
+@page "/roles"
+@attribute [RequirePermission(AppPermissions.RolesView)]
+@using NovaBooks.Application.DTOs.Roles
+@inject RolesApi RolesApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Roles | NovaBooks</PageTitle>
+
+<PageHeader Title="Roles"
+            Description="Agrupan permisos para asignarlos a los usuarios."
+            Breadcrumbs="_breadcrumbs" />
+
+<div class="stat-grid">
+    <StatCard Tint="sky" Icon="@Icons.Material.Outlined.Shield" Label="Roles activos"
+              Loading="_roles is null && _error is null" Value="@_roles?.Count(role => role.IsActive).ToString("N0")" Error="@_error" />
+    <StatCard Tint="mint" Icon="@Icons.Material.Outlined.People" Label="Asignaciones a usuarios"
+              Loading="_roles is null && _error is null" Value="@_roles?.Sum(role => role.UsersCount).ToString("N0")" Error="@_error" />
+    @if (Session.HasPermission(AppPermissions.RolesAssignPermissions))
+    {
+        <StatCard Tint="peach" Icon="@Icons.Material.Outlined.Key" Label="Permisos del sistema" Href="/permisos"
+                  Loading="_roles is null && _error is null" Value="@_roles?.Select(role => role.Permissions.Count).DefaultIfEmpty().Max().ToString("N0")"
+                  Caption="Asignar por rol" Error="@_error" />
+    }
+</div>
+
+<Panel Title="Roles" Subtitle="Cada rol agrupa los permisos que reciben sus usuarios." Icon="@Icons.Material.Outlined.Shield">
+    <Actions>
+        @if (Session.HasPermission(AppPermissions.RolesCreate))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="CreateAsync">
+                Nuevo rol
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_search" Immediate="true"
+                      Placeholder="Buscar por nombre o descripción"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      aria-label="Buscar roles" Class="list-toolbar__search" />
+
+        <MudSelect T="StatusFilter" @bind-Value="_status" Label="Estado"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem Value="StatusFilter.Active">Activos</MudSelectItem>
+            <MudSelectItem Value="StatusFilter.Inactive">Inactivos</MudSelectItem>
+            <MudSelectItem Value="StatusFilter.All">Todos</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    @if (_roles is null && _error is null)
+    {
+        <LoadingState Rows="4" />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar los roles" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (Filtered.Count == 0)
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.AdminPanelSettings" Title="No se encontraron roles"
+                    Message="Ajuste la búsqueda o el filtro de estado." />
+    }
+    else
+    {
+        <div class="table-scroll">
+            <MudTable Items="Filtered" Hover="true" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="nb-table">
+                <HeaderContent>
+                    <MudTh>Rol</MudTh>
+                    <MudTh>Usuarios</MudTh>
+                    <MudTh>Permisos</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh Class="nb-table__actions">Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">
+                            @context.Name
+                            @if (context.IsProtected)
+                            {
+                                <MudTooltip Text="Rol del sistema: no se renombra, no se desactiva y sus permisos están protegidos.">
+                                    <MudIcon Icon="@Icons.Material.Outlined.Shield" Size="Size.Small" Color="Color.Secondary" Class="ml-1" />
+                                </MudTooltip>
+                            }
+                        </div>
+                        <div class="cell-secondary">@(context.Description ?? "Sin descripción")</div>
+                    </MudTd>
+                    <MudTd>@context.UsersCount</MudTd>
+                    <MudTd>@context.Permissions.Count</MudTd>
+                    <MudTd><StatusChip IsActive="context.IsActive" /></MudTd>
+                    <MudTd Class="nb-table__actions">
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                 AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                 aria-label="@($"Más acciones para {context.Name}")">
+                            @if (Session.HasPermission(AppPermissions.RolesUpdate))
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(context)">Editar</MudMenuItem>
+                            }
+                            <MudMenuItem Icon="@Icons.Material.Outlined.People" OnClick="() => ShowUsersAsync(context)">
+                                Ver usuarios asignados
+                            </MudMenuItem>
+                            @if (Session.HasPermission(AppPermissions.RolesAssignPermissions))
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Outlined.Key"
+                                             OnClick="@(() => Navigation.NavigateTo($"/permisos?rol={context.Id}"))">
+                                    @(context.IsProtected ? "Ver permisos" : "Asignar permisos")
+                                </MudMenuItem>
+                            }
+                            @if (context.IsActive && Session.HasPermission(AppPermissions.RolesDelete))
+                            {
+                                @if (context.IsProtected || context.UsersCount > 0)
+                                {
+                                    <MudMenuItem Icon="@Icons.Material.Outlined.Block" Disabled="true">
+                                        Desactivar (@(context.IsProtected ? "rol protegido" : "tiene usuarios asignados"))
+                                    </MudMenuItem>
+                                }
+                                else
+                                {
+                                    <MudMenuItem Icon="@Icons.Material.Outlined.Block" OnClick="() => ChangeStatusAsync(context, false)">
+                                        Desactivar
+                                    </MudMenuItem>
+                                }
+                            }
+                            @if (!context.IsActive && Session.HasPermission(AppPermissions.RolesUpdate))
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Outlined.CheckCircle" OnClick="() => ChangeStatusAsync(context, true)">
+                                    Activar
+                                </MudMenuItem>
+                            }
+                        </MudMenu>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+    }
+    </ChildContent>
+</Panel>
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Configuración", null, disabled: true),
+        new("Roles", null, disabled: true)
+    ];
+
+    private List<RoleResponse>? _roles;
+    private string? _error;
+    private string? _search;
+    private StatusFilter _status = StatusFilter.Active;
+
+    private IReadOnlyCollection<RoleResponse> Filtered =>
+        (_roles ?? [])
+            .Where(role => _status switch
+            {
+                StatusFilter.Active => role.IsActive,
+                StatusFilter.Inactive => !role.IsActive,
+                _ => true
+            })
+            .Where(role => string.IsNullOrWhiteSpace(_search) ||
+                           role.Name.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                           (role.Description?.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+            .ToList();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+
+        ApiResult<List<RoleResponse>> result = await RolesApi.GetAllAsync();
+
+        if (result.Succeeded)
+        {
+            _roles = result.Data ?? [];
+        }
+        else
+        {
+            _error = result.Message;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        RoleResponse? role = await Dialogs.ShowFormAsync<RoleFormDialog, RoleResponse>(
+            "Nuevo rol", new DialogParameters<RoleFormDialog>());
+
+        if (role is not null)
+        {
+            Snackbar.Add($"Rol {role.Name} creado. Asígnele permisos desde la página Permisos.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditAsync(RoleResponse role)
+    {
+        RoleResponse? updated = await Dialogs.ShowFormAsync<RoleFormDialog, RoleResponse>(
+            "Editar rol", new DialogParameters<RoleFormDialog> { { dialog => dialog.Role, role } });
+
+        if (updated is not null)
+        {
+            Snackbar.Add($"Rol {updated.Name} actualizado.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private Task ShowUsersAsync(RoleResponse role)
+    {
+        return Dialogs.ShowAsync<RoleUsersDialog>(
+            $"Usuarios con el rol {role.Name}",
+            new DialogParameters<RoleUsersDialog> { { dialog => dialog.Role, role } },
+            DialogExtensions.FormOptions);
+    }
+
+    private async Task ChangeStatusAsync(RoleResponse role, bool activate)
+    {
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Activar rol" : "Desactivar rol",
+            activate
+                ? $"¿Desea activar el rol {role.Name}? Podrá asignarse nuevamente a usuarios."
+                : $"¿Desea desactivar el rol {role.Name}? No podrá asignarse a usuarios.",
+            activate ? "Activar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<RoleResponse> result = await RolesApi.ChangeStatusAsync(role.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Rol {role.Name} {(activate ? "activado" : "desactivado")}.", Severity.Success);
+            await LoadAsync();
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+}

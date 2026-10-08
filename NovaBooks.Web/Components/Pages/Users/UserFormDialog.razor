@@ -1,0 +1,237 @@
+@using System.ComponentModel.DataAnnotations
+@using NovaBooks.Application.DTOs.Roles
+@using NovaBooks.Application.DTOs.Users
+@inject UsersApi UsersApi
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmit" id="user-form">
+            <DataAnnotationsValidator />
+            <ServerValidator Result="_saveResult" />
+            <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+            <div class="form-section">
+                <div class="form-section__title">Datos de acceso</div>
+                <div class="form-grid">
+                    <MudTextField @bind-Value="_model.UserName" For="@(() => _model.UserName)"
+                                  Label="Nombre de usuario *" HelperText="Identificador para iniciar sesión."
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)"
+                                  Label="Correo electrónico *" InputType="InputType.Email"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudTextField @bind-Value="_model.PhoneNumber" For="@(() => _model.PhoneNumber)"
+                                  Label="Teléfono" InputType="InputType.Telephone"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    @if (IsCreate)
+                    {
+                        <MudTextField @bind-Value="_model.Password" For="@(() => _model.Password)"
+                                      Label="Contraseña inicial *"
+                                      HelperText="Mínimo 8 caracteres con mayúscula, minúscula, número y símbolo."
+                                      InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@(_showPassword ? Icons.Material.Outlined.VisibilityOff : Icons.Material.Outlined.Visibility)"
+                                      AdornmentAriaLabel="Mostrar u ocultar contraseña"
+                                      OnAdornmentClick="TogglePassword"
+                                      UserAttributes="@(new Dictionary<string, object?> { ["autocomplete"] = "new-password" })"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    }
+                </div>
+            </div>
+
+            @if (IsCreate && CanAssignRoles)
+            {
+                <div class="form-section">
+                    <div class="form-section__title">Roles</div>
+                    @if (_rolesError is not null)
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense="true">
+                            @_rolesError
+                            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="LoadRolesAsync">Reintentar</MudButton>
+                        </MudAlert>
+                    }
+                    else if (_roles is null)
+                    {
+                        <MudSkeleton Height="40px" />
+                    }
+                    else
+                    {
+                        <MudSelect T="string" Label="Roles asignados" MultiSelection="true"
+                                   @bind-SelectedValues="_selectedRoles"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense"
+                                   HelperText="Puede asignarlos después desde la lista.">
+                            @foreach (RoleOptionResponse role in _roles)
+                            {
+                                <MudSelectItem Value="role.Name">@role.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </div>
+            }
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit"
+                   form="user-form" Disabled="_saving">
+            @if (_saving)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Guardar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Usuario a editar; null para crear.</summary>
+    [Parameter]
+    public UserResponse? User { get; set; }
+
+    [Parameter]
+    public bool CanAssignRoles { get; set; }
+
+    private readonly UserFormModel _model = new();
+    private IReadOnlyCollection<string> _selectedRoles = [];
+    private List<RoleOptionResponse>? _roles;
+    private string? _rolesError;
+    private bool _showPassword;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    private bool IsCreate => User is null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (User is not null)
+        {
+            _model.UserName = User.UserName;
+            _model.Email = User.Email;
+            _model.PhoneNumber = User.PhoneNumber;
+        }
+
+        _model.RequiresPassword = IsCreate;
+
+        if (IsCreate && CanAssignRoles)
+        {
+            await LoadRolesAsync();
+        }
+    }
+
+    private async Task LoadRolesAsync()
+    {
+        _rolesError = null;
+        _roles = null;
+
+        ApiResult<List<RoleOptionResponse>> result = await UsersApi.GetAssignableRolesAsync();
+
+        if (result.Succeeded)
+        {
+            _roles = result.Data ?? [];
+        }
+        else
+        {
+            _rolesError = "No fue posible cargar los roles: " + result.Message;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<UserResponse> result;
+
+            if (IsCreate)
+            {
+                result = await UsersApi.CreateAsync(new CreateUserRequest
+                {
+                    UserName = _model.UserName,
+                    Email = _model.Email,
+                    PhoneNumber = _model.PhoneNumber,
+                    Password = _model.Password ?? string.Empty,
+                    Roles = _selectedRoles.ToList()
+                });
+            }
+            else
+            {
+                result = await UsersApi.UpdateAsync(User!.Id, new UpdateUserRequest
+                {
+                    UserName = _model.UserName,
+                    Email = _model.Email,
+                    PhoneNumber = _model.PhoneNumber
+                });
+            }
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() => Dialog.Cancel();
+
+    private void TogglePassword() => _showPassword = !_showPassword;
+
+    /// <summary>
+    /// Mismas reglas que CreateUserRequest/UpdateUserRequest; la contraseña
+    /// solo se exige al crear.
+    /// </summary>
+    private sealed class UserFormModel : IValidatableObject
+    {
+        [Required(ErrorMessage = "El nombre de usuario es obligatorio.")]
+        [StringLength(100, MinimumLength = 3,
+            ErrorMessage = "El nombre de usuario debe contener entre 3 y 100 caracteres.")]
+        public string UserName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "El correo electrónico es obligatorio.")]
+        [EmailAddress(ErrorMessage = "El correo electrónico no es válido.")]
+        [StringLength(256, ErrorMessage = "El correo no puede superar los 256 caracteres.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Phone(ErrorMessage = "El número de teléfono no es válido.")]
+        [StringLength(30, ErrorMessage = "El teléfono no puede superar los 30 caracteres.")]
+        public string? PhoneNumber { get; set; }
+
+        public string? Password { get; set; }
+
+        public bool RequiresPassword { get; set; }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (RequiresPassword &&
+                (string.IsNullOrEmpty(Password) || Password.Length is < 8 or > 100))
+            {
+                yield return new ValidationResult(
+                    "La contraseña debe contener entre 8 y 100 caracteres.",
+                    [nameof(Password)]);
+            }
+        }
+    }
+
+    private void OnInvalidSubmit()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+    }
+}

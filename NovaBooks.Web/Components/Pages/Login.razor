@@ -1,0 +1,174 @@
+@page "/login"
+@layout AuthLayout
+@attribute [AllowAnonymousPage]
+@using NovaBooks.Application.Authentication
+@inject AuthService Auth
+@inject SessionState Session
+@inject NavigationManager Navigation
+
+<PageTitle>Iniciar sesión | NovaBooks</PageTitle>
+
+<div class="login">
+    <main class="login__card" aria-labelledby="login-title">
+        <div class="login__brand">
+            <span class="login__logo" aria-hidden="true"><MudIcon Icon="@Icons.Material.Filled.AutoStories" /></span>
+            <span class="login__brand-name">NovaBooks</span>
+        </div>
+
+        <h1 id="login-title" class="login__title">Iniciar sesión</h1>
+        <p class="login__subtitle">Ingrese con su cuenta de empleado para continuar.</p>
+
+        @if (_sessionExpired && _errorMessage is null)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                Su sesión expiró. Inicie sesión nuevamente.
+            </MudAlert>
+        }
+
+        @if (_errorMessage is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-4" role="alert">
+                @_errorMessage
+            </MudAlert>
+        }
+
+        <EditForm Model="_model" OnValidSubmit="SubmitAsync" FormName="login">
+            <DataAnnotationsValidator />
+
+            <label class="login__label" for="login-user">Usuario o correo electrónico</label>
+            <MudTextField @bind-Value="_model.UserNameOrEmail"
+                          For="@(() => _model.UserNameOrEmail)"
+                          Placeholder="Ej. jperez"
+                          Variant="Variant.Outlined"
+                          Immediate="true"
+                          AutoFocus="true"
+                          Disabled="_submitting"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Outlined.Person"
+                          UserAttributes="@(new Dictionary<string, object?> { ["autocomplete"] = "username", ["id"] = "login-user" })"
+                          Class="mb-4" />
+
+            <label class="login__label" for="login-password">Contraseña</label>
+            <MudTextField @bind-Value="_model.Password"
+                          For="@(() => _model.Password)"
+                          Placeholder="Ingrese su contraseña"
+                          Variant="Variant.Outlined"
+                          Immediate="true"
+                          Disabled="_submitting"
+                          InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@(_showPassword ? Icons.Material.Outlined.VisibilityOff : Icons.Material.Outlined.Visibility)"
+                          AdornmentAriaLabel="@(_showPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                          OnAdornmentClick="TogglePassword"
+                          UserAttributes="@(new Dictionary<string, object?> { ["autocomplete"] = "current-password", ["id"] = "login-password" })"
+                          Class="mb-5" />
+
+            <MudButton ButtonType="ButtonType.Submit"
+                       Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Size="Size.Large"
+                       FullWidth="true"
+                       Disabled="_submitting"
+                       Class="login__submit">
+                @if (_submitting)
+                {
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+                    <span>Iniciando sesión…</span>
+                }
+                else
+                {
+                    <span>Ingresar</span>
+                }
+            </MudButton>
+        </EditForm>
+
+        <p class="login__help">
+            ¿Olvidó su contraseña o su cuenta está bloqueada? Comuníquese con el administrador del sistema.
+        </p>
+    </main>
+
+    <p class="login__footer">© @DateTime.Now.Year NovaBooks</p>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Reason { get; set; }
+
+    private readonly LoginRequest _model = new();
+
+    private bool _submitting;
+    private bool _showPassword;
+    private bool _sessionExpired;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sessionExpired = string.Equals(Reason, "expired", StringComparison.OrdinalIgnoreCase);
+
+        await Auth.RestoreAsync();
+
+        if (Session.IsAuthenticated)
+        {
+            Navigation.NavigateTo(SafeReturnUrl(), replace: true);
+        }
+    }
+
+    private void TogglePassword()
+    {
+        _showPassword = !_showPassword;
+    }
+
+    private async Task SubmitAsync()
+    {
+        // Evita el doble envío (Enter repetido o doble clic).
+        if (_submitting)
+        {
+            return;
+        }
+
+        _submitting = true;
+        _errorMessage = null;
+
+        try
+        {
+            LoginOutcome outcome = await Auth.LoginAsync(_model);
+
+            if (outcome.Succeeded)
+            {
+                _model.Password = string.Empty;
+                Navigation.NavigateTo(SafeReturnUrl(), replace: true);
+                return;
+            }
+
+            _errorMessage = outcome.ErrorMessage;
+        }
+        catch (Exception)
+        {
+            _errorMessage = AuthService.UnexpectedLoginMessage;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    /// <summary>
+    /// Solo rutas locales, para evitar redirecciones abiertas.
+    /// </summary>
+    private string SafeReturnUrl()
+    {
+        if (!string.IsNullOrWhiteSpace(ReturnUrl) &&
+            ReturnUrl.StartsWith('/') &&
+            !ReturnUrl.StartsWith("//", StringComparison.Ordinal) &&
+            !ReturnUrl.StartsWith("/\\", StringComparison.Ordinal) &&
+            !ReturnUrl.StartsWith("/login", StringComparison.OrdinalIgnoreCase))
+        {
+            return ReturnUrl;
+        }
+
+        return "/";
+    }
+}

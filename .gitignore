@@ -361,3 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Imágenes de productos subidas en desarrollo
+NovaBooks.Api/App_Data/

@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\NovaBooks.Application\NovaBooks.Application.csproj" />
     <ProjectReference Include="..\NovaBooks.Domain\NovaBooks.Domain.csproj" />
+    <ProjectReference Include="..\NovaBooks.Infrastructure\NovaBooks.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

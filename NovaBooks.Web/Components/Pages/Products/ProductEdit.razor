@@ -1,0 +1,614 @@
+@page "/productos/nuevo"
+@page "/productos/{Id:int}"
+@attribute [RequirePermission(AppPermissions.CatalogView)]
+@using NovaBooks.Application.DTOs.Authors
+@using NovaBooks.Application.DTOs.Common
+@using NovaBooks.Application.DTOs.Editorials
+@using NovaBooks.Application.DTOs.Products
+@inject ProductsApi ProductsApi
+@inject SessionState Session
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject IDialogService Dialogs
+
+<PageTitle>@PageTitleText | NovaBooks</PageTitle>
+
+@if (IsCreate && !Session.HasPermission(AppPermissions.CatalogCreate))
+{
+    <AccessDenied Permission="@AppPermissions.CatalogCreate" />
+}
+else
+{
+    <PageHeader Title="@PageTitleText" Breadcrumbs="_breadcrumbs"
+                Description="@(IsCreate ? "Registre la identificación, los datos bibliográficos y el precio del libro." : _product?.Code)">
+        <Actions>
+            @if (!IsCreate && _product is not null)
+            {
+                <StatusChip IsActive="_product.IsActive" />
+            }
+        </Actions>
+    </PageHeader>
+
+    @if (_loadError is not null)
+    {
+        <div class="panel">
+            <ErrorState Title="No fue posible cargar el producto" Message="@_loadError" OnRetry="LoadAsync" />
+        </div>
+    }
+    else if (_catalogs is null || (!IsCreate && _product is null))
+    {
+        <div class="panel"><LoadingState Rows="6" /></div>
+    }
+    else
+    {
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmitAsync">
+            <DataAnnotationsValidator />
+            <ServerValidator Result="_saveResult" />
+
+            <div class="panel">
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+                @if (ReadOnly)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                        Está viendo el producto en modo de solo lectura.
+                    </MudAlert>
+                }
+
+                <div class="form-section">
+                    <div class="form-section__title">Portada</div>
+                    <ProductCover ProductId="Id" ImageVersion="@_product?.ImageVersion" Title="@_model.Title"
+                                  ReadOnly="ReadOnly" ImageVersionChanged="OnImageChanged" />
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section__title">Identificación</div>
+                    <div class="form-grid">
+                        <MudTextField T="string" Value="@(_product?.Code ?? "Se asignará al guardar")" Label="Código interno"
+                                      HelperText="Lo asigna el sistema automáticamente."
+                                      ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="_model.Barcode" For="@(() => _model.Barcode)" Label="Código de barras" HelperText="El que se escanea en caja; puede ser el del distribuidor."
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                        <MudTextField @bind-Value="_model.Isbn13" For="@(() => _model.Isbn13)" Label="ISBN-13"
+                                      HelperText="Identificador internacional actual (13 dígitos, inicia con 978 o 979)."
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                        <MudTextField @bind-Value="_model.Isbn10" For="@(() => _model.Isbn10)" Label="ISBN-10" HelperText="Formato anterior a 2007; solo en ediciones antiguas."
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section__title">Datos del libro</div>
+                    <div class="form-grid">
+                        <MudTextField @bind-Value="_model.Title" For="@(() => _model.Title)" Label="Título *"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                        <MudTextField @bind-Value="_model.Subtitle" For="@(() => _model.Subtitle)" Label="Subtítulo"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                        <div class="field-with-action">
+                            <MudAutocomplete T="CatalogOptionResponse" Label="Editorial"
+                                             Value="SelectedEditorial" ValueChanged="OnEditorialChanged"
+                                             SearchFunc="SearchEditorialsAsync" ToStringFunc="@(item => item?.Name)"
+                                             Placeholder="Escriba para buscar" Clearable="true" ResetValueOnEmptyText="true"
+                                             MaxItems="25" Dense="true" OpenOnFocus="true"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly"
+                                             HelperText="@(_catalogs.Editorials.Count == 0 ? "No hay editoriales registradas todavía." : "Busque por nombre o código.")">
+                                <NoItemsTemplate>
+                                    <div class="autocomplete-empty">No se encontraron editoriales.</div>
+                                </NoItemsTemplate>
+                            </MudAutocomplete>
+                            @if (!ReadOnly && Session.HasPermission(AppPermissions.CatalogCreate))
+                            {
+                                <MudTooltip Text="Registrar una editorial nueva">
+                                    <MudIconButton Icon="@Icons.Material.Outlined.AddBusiness" Variant="Variant.Outlined"
+                                                   Color="Color.Primary" Size="Size.Medium" aria-label="Registrar editorial"
+                                                   OnClick="CreateEditorialAsync" Class="field-with-action__button" />
+                                </MudTooltip>
+                            }
+                        </div>
+                        <MudSelect T="int?" @bind-Value="_model.LanguageId" For="@(() => _model.LanguageId)" Label="Idioma *"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly">
+                            @foreach (CatalogOptionResponse item in _catalogs.Languages)
+                            {
+                                <MudSelectItem T="int?" Value="item.Id">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudSelect T="int?" @bind-Value="_model.FormatId" For="@(() => _model.FormatId)" Label="Formato *"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly">
+                            @foreach (CatalogOptionResponse item in _catalogs.Formats)
+                            {
+                                <MudSelectItem T="int?" Value="item.Id">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudSelect T="int?" @bind-Value="_model.TaxId" For="@(() => _model.TaxId)" Label="Impuesto *"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly">
+                            @foreach (TaxOptionResponse item in _catalogs.Taxes)
+                            {
+                                <MudSelectItem T="int?" Value="item.Id">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudTextField @bind-Value="_model.Edition" For="@(() => _model.Edition)" Label="Edición"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                        <div class="form-grid form-grid--nested">
+                            <MudNumericField T="int?" @bind-Value="_model.PublicationYear" For="@(() => _model.PublicationYear)"
+                                             Label="Año" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             HideSpinButtons="true" ReadOnly="ReadOnly" />
+                            <MudNumericField T="int?" @bind-Value="_model.PageCount" For="@(() => _model.PageCount)"
+                                             Label="Páginas" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             HideSpinButtons="true" ReadOnly="ReadOnly" />
+                        </div>
+                    </div>
+                    <MudTextField @bind-Value="_model.Description" For="@(() => _model.Description)" Label="Descripción" Counter="4000" MaxLength="4000"
+                                  Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3" ReadOnly="ReadOnly" />
+                    <MudSwitch T="bool" @bind-Value="_model.AllowsSale" Color="Color.Secondary" Class="mt-2" ReadOnly="ReadOnly">
+                        Disponible para la venta
+                    </MudSwitch>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section__title">Autores y categorías</div>
+                    <div class="form-grid">
+                        <div class="authors-field">
+                            <div class="field-with-action">
+                                <MudAutocomplete @ref="_authorSearch" T="CatalogOptionResponse" Label="Autores"
+                                                 Value="_authorToAdd" ValueChanged="AddAuthorAsync"
+                                                 SearchFunc="SearchAuthorsAsync" ToStringFunc="@(item => item?.Name)"
+                                                 Placeholder="Buscar autor para agregar"
+                                                 ResetValueOnEmptyText="true" CoerceText="false"
+                                                 MaxItems="25" Dense="true" OpenOnFocus="true"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly"
+                                                 HelperText="@(_catalogs.Authors.Count == 0 ? "No hay autores registrados todavía." : null)">
+                                    <NoItemsTemplate>
+                                        <div class="autocomplete-empty">No se encontraron autores.</div>
+                                    </NoItemsTemplate>
+                                </MudAutocomplete>
+                                @if (!ReadOnly && Session.HasPermission(AppPermissions.CatalogCreate))
+                                {
+                                    <MudTooltip Text="Registrar un autor nuevo">
+                                        <MudIconButton Icon="@Icons.Material.Outlined.PersonAddAlt" Variant="Variant.Outlined"
+                                                       Color="Color.Primary" Size="Size.Medium" aria-label="Registrar autor"
+                                                       OnClick="CreateAuthorAsync" Class="field-with-action__button" />
+                                    </MudTooltip>
+                                }
+                            </div>
+                            @if (_model.AuthorIds.Count == 0)
+                            {
+                                <div class="chip-list__empty">Sin autores asignados.</div>
+                            }
+                            else
+                            {
+                                <div class="chip-list" aria-label="Autores del libro">
+                                    @foreach (int authorId in _model.AuthorIds)
+                                    {
+                                        @if (ReadOnly)
+                                        {
+                                            <MudChip T="int" Value="authorId" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary">
+                                                @AuthorName(authorId)
+                                            </MudChip>
+                                        }
+                                        else
+                                        {
+                                            <MudChip T="int" Value="authorId" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                                     OnClose="RemoveAuthor">
+                                                @AuthorName(authorId)
+                                            </MudChip>
+                                        }
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <MudSelect T="int" Label="Categorías" MultiSelection="true"
+                                   @bind-SelectedValues="SelectedCategories" ToStringFunc="CategoryName"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly">
+                            @foreach (CatalogOptionResponse item in _catalogs.Categories)
+                            {
+                                <MudSelectItem T="int" Value="item.Id">@item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                        @if (_model.CategoryIds.Count > 1)
+                        {
+                            <MudSelect T="int?" @bind-Value="_model.PrimaryCategoryId" For="@(() => _model.PrimaryCategoryId)"
+                                       Label="Categoría principal" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly">
+                                @foreach (int categoryId in _model.CategoryIds)
+                                {
+                                    <MudSelectItem T="int?" Value="categoryId">@CategoryName(categoryId)</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-section__title">Precios</div>
+                    @if (CanManagePrices)
+                    {
+                        <div class="form-grid">
+                            @foreach (PriceListOptionResponse list in _catalogs.PriceLists)
+                            {
+                                <MudNumericField T="decimal?" Value="_prices.GetValueOrDefault(list.Id)"
+                                                 ValueChanged="(decimal? value) => _prices[list.Id] = value"
+                                                 Label="@($"{list.Name}{(list.IsDefault ? " (predeterminado)" : "")}")"
+                                                 Min="0m" Format="N2" HideSpinButtons="true"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly"
+                                                 Adornment="Adornment.Start" AdornmentText="Q" />
+                            }
+                            <MudNumericField T="decimal?" @bind-Value="_referenceCost" Label="Costo de referencia"
+                                             HelperText="Referencia para márgenes; no reemplaza el costo de compras o lotes."
+                                             Min="0m" Format="N2" HideSpinButtons="true"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly"
+                                             Adornment="Adornment.Start" AdornmentText="Q" />
+                        </div>
+                        <MudText Typo="Typo.caption" Class="cell-secondary mt-1">
+                            Un precio nuevo cierra el vigente y queda registrado en el historial.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Class="cell-secondary mb-2">
+                            Solo los usuarios con permiso para administrar precios pueden modificarlos.
+                        </MudText>
+                        @if (_product is { Prices.Count: > 0 })
+                        {
+                            <ul class="plain-list">
+                                @foreach (ProductPriceResponse price in _product.Prices)
+                                {
+                                    <li>@price.PriceListName: <strong>Q @price.Price.ToString("N2")</strong></li>
+                                }
+                            </ul>
+                        }
+                    }
+
+                    @if (_product is { PriceHistory.Count: > 0 })
+                    {
+                        <MudExpansionPanels Elevation="0" Class="mt-3 price-history">
+                            <MudExpansionPanel Text="@($"Historial de precios ({_product.PriceHistory.Count})")">
+                                <MudSimpleTable Dense="true" Elevation="0" Class="nb-table">
+                                    <thead>
+                                        <tr><th>Lista</th><th class="text-right">Precio</th><th>Desde</th><th>Hasta</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (ProductPriceResponse price in _product.PriceHistory)
+                                        {
+                                            <tr>
+                                                <td>@price.PriceListName</td>
+                                                <td class="text-right">Q @price.Price.ToString("N2")</td>
+                                                <td>@price.StartDate.ToLocalTime().ToString("g")</td>
+                                                <td>@price.EndDate?.ToLocalTime().ToString("g")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudExpansionPanel>
+                        </MudExpansionPanels>
+                    }
+                </div>
+
+                <div class="form-actions">
+                    <MudButton Href="/productos" Variant="Variant.Text" Disabled="_saving">
+                        @(ReadOnly ? "Volver" : "Cancelar")
+                    </MudButton>
+                    @if (!ReadOnly)
+                    {
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Save" Disabled="_saving">
+                            @(_saving ? "Guardando…" : "Guardar")
+                        </MudButton>
+                    }
+                </div>
+            </div>
+        </EditForm>
+    }
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private SaveProductRequest _model = new();
+    private ProductResponse? _product;
+    private ProductCatalogsResponse? _catalogs;
+    private Dictionary<int, decimal?> _prices = [];
+    private decimal? _referenceCost;
+    private string? _loadError;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+    private List<BreadcrumbItem> _breadcrumbs = [];
+
+    private bool IsCreate => Id is null;
+
+    private bool ReadOnly =>
+        _saving || (!IsCreate && !Session.HasPermission(AppPermissions.CatalogUpdate));
+
+    private bool CanManagePrices => Session.HasPermission(AppPermissions.CatalogManagePrices);
+
+    private string PageTitleText => IsCreate ? "Nuevo libro" : _product?.Title ?? "Producto";
+
+    private MudAutocomplete<CatalogOptionResponse>? _authorSearch;
+    private CatalogOptionResponse? _authorToAdd;
+
+    /// <summary>
+    /// Editorial seleccionada; si está inactiva no aparece en el catálogo y
+    /// se muestra con el nombre guardado en el libro.
+    /// </summary>
+    private CatalogOptionResponse? SelectedEditorial =>
+        _model.EditorialId is not { } id
+            ? null
+            : _catalogs?.Editorials.FirstOrDefault(item => item.Id == id)
+              ?? new CatalogOptionResponse { Id = id, Name = _product?.EditorialName ?? id.ToString() };
+
+    private void OnEditorialChanged(CatalogOptionResponse? editorial)
+    {
+        _model.EditorialId = editorial?.Id;
+    }
+
+    private Task<IEnumerable<CatalogOptionResponse>> SearchEditorialsAsync(string? text, CancellationToken _)
+    {
+        IEnumerable<CatalogOptionResponse> result = (_catalogs?.Editorials ?? [])
+            .Where(item => SearchText.Matches(item.Name, text) || SearchText.Matches(item.Code, text));
+
+        return Task.FromResult(result);
+    }
+
+    private Task<IEnumerable<CatalogOptionResponse>> SearchAuthorsAsync(string? text, CancellationToken _)
+    {
+        // Los autores ya agregados no se vuelven a ofrecer.
+        IEnumerable<CatalogOptionResponse> result = (_catalogs?.Authors ?? [])
+            .Where(item => !_model.AuthorIds.Contains(item.Id) && SearchText.Matches(item.Name, text));
+
+        return Task.FromResult(result);
+    }
+
+    private async Task AddAuthorAsync(CatalogOptionResponse? author)
+    {
+        if (author is not null && !_model.AuthorIds.Contains(author.Id))
+        {
+            _model.AuthorIds = [.. _model.AuthorIds, author.Id];
+        }
+
+        _authorToAdd = null;
+
+        if (_authorSearch is not null)
+        {
+            await _authorSearch.ClearAsync();
+        }
+    }
+
+    private void RemoveAuthor(MudChip<int> chip)
+    {
+        _model.AuthorIds = _model.AuthorIds.Where(id => id != chip.Value).ToList();
+    }
+
+    private IReadOnlyCollection<int> SelectedCategories
+    {
+        get => _model.CategoryIds;
+        set
+        {
+            _model.CategoryIds = value.ToList();
+
+            if (_model.PrimaryCategoryId is { } primary && !_model.CategoryIds.Contains(primary))
+            {
+                _model.PrimaryCategoryId = null;
+            }
+
+            if (_model.CategoryIds.Count == 1)
+            {
+                _model.PrimaryCategoryId = _model.CategoryIds[0];
+            }
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _breadcrumbs =
+        [
+            new("Inicio", "/"),
+            new("Libros", "/productos"),
+            new(IsCreate ? "Nuevo" : "Detalle", null, disabled: true)
+        ];
+
+        if (IsCreate && !Session.HasPermission(AppPermissions.CatalogCreate))
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+
+        Task<ApiResult<ProductCatalogsResponse>> catalogsTask = ProductsApi.GetCatalogsAsync();
+        Task<ApiResult<ProductResponse>>? productTask = IsCreate ? null : ProductsApi.GetAsync(Id!.Value);
+
+        ApiResult<ProductCatalogsResponse> catalogs = await catalogsTask;
+
+        if (!catalogs.Succeeded || catalogs.Data is null)
+        {
+            _loadError = catalogs.Message;
+            return;
+        }
+
+        _catalogs = catalogs.Data;
+
+        if (productTask is null)
+        {
+            // Valores iniciales razonables: primer idioma, formato e impuesto.
+            _model = new SaveProductRequest
+            {
+                LanguageId = _catalogs.Languages.FirstOrDefault()?.Id,
+                FormatId = _catalogs.Formats.FirstOrDefault()?.Id,
+                TaxId = _catalogs.Taxes.FirstOrDefault()?.Id,
+                AllowsSale = true
+            };
+            _prices = [];
+            _referenceCost = null;
+            return;
+        }
+
+        ApiResult<ProductResponse> product = await productTask;
+
+        if (!product.Succeeded || product.Data is null)
+        {
+            _loadError = product.Message;
+            return;
+        }
+
+        SetProduct(product.Data);
+    }
+
+    private void SetProduct(ProductResponse product)
+    {
+        _product = product;
+        _model = new SaveProductRequest
+        {
+            Isbn10 = product.Isbn10,
+            Isbn13 = product.Isbn13,
+            Barcode = product.Barcode,
+            Title = product.Title,
+            Subtitle = product.Subtitle,
+            EditorialId = product.EditorialId,
+            LanguageId = product.LanguageId,
+            FormatId = product.FormatId,
+            TaxId = product.TaxId,
+            Edition = product.Edition,
+            PublicationYear = product.PublicationYear,
+            PageCount = product.PageCount,
+            Description = product.Description,
+            AllowsSale = product.AllowsSale,
+            AuthorIds = product.Authors.OrderBy(author => author.Order).Select(author => author.Id).ToList(),
+            CategoryIds = product.Categories.Select(category => category.Id).ToList(),
+            PrimaryCategoryId = product.Categories.FirstOrDefault(category => category.IsPrimary)?.Id
+        };
+        _prices = product.Prices.ToDictionary(price => price.PriceListId, price => (decimal?)price.Price);
+        _referenceCost = product.ReferenceCost;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || ReadOnly)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            // Sin permiso de precios no se envían precios ni costo; la API
+            // también lo rechaza.
+            if (CanManagePrices)
+            {
+                _model.Prices = _prices
+                    .Where(price => price.Value is not null)
+                    .Select(price => new ProductPriceRequest { PriceListId = price.Key, Price = price.Value!.Value })
+                    .ToList();
+                _model.ReferenceCost = _referenceCost;
+            }
+            else
+            {
+                _model.Prices = null;
+                _model.ReferenceCost = null;
+            }
+
+            ApiResult<ProductResponse> result = IsCreate
+                ? await ProductsApi.CreateAsync(_model)
+                : await ProductsApi.UpdateAsync(Id!.Value, _model);
+
+            if (!result.Succeeded || result.Data is null)
+            {
+                _saveResult = result;
+                return;
+            }
+
+            Snackbar.Add(IsCreate ? $"Libro {result.Data.Code} creado. Puede agregar su portada desde la ficha." : $"Libro {result.Data.Code} actualizado.", Severity.Success);
+
+            // Al guardar se regresa al listado. La portada se agrega desde
+            // la ficha del libro ya creado.
+            Navigation.NavigateTo("/productos");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private string AuthorName(int id) =>
+        _catalogs?.Authors.FirstOrDefault(item => item.Id == id)?.Name
+        ?? _product?.Authors.FirstOrDefault(item => item.Id == id)?.Name
+        ?? id.ToString();
+
+    private string CategoryName(int id) =>
+        _catalogs?.Categories.FirstOrDefault(item => item.Id == id)?.Name
+        ?? _product?.Categories.FirstOrDefault(item => item.Id == id)?.Name
+        ?? id.ToString();
+
+    private string CategoryName(int? id) => id is null ? string.Empty : CategoryName(id.Value);
+
+    private async Task OnInvalidSubmitAsync()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("novaBooks.scrollToFirstError");
+    }
+
+    private async Task CreateAuthorAsync()
+    {
+        AuthorResponse? author = await Dialogs.ShowFormAsync<NovaBooks.Web.Components.Pages.Authors.AuthorFormDialog, AuthorResponse>(
+            "Nuevo autor",
+            new DialogParameters<NovaBooks.Web.Components.Pages.Authors.AuthorFormDialog>(),
+            DialogExtensions.WideFormOptions);
+
+        if (author is null || _catalogs is null)
+        {
+            return;
+        }
+
+        _catalogs.Authors = _catalogs.Authors
+            .Append(new CatalogOptionResponse { Id = author.Id, Code = author.Id.ToString(), Name = author.DisplayName })
+            .OrderBy(item => item.Name)
+            .ToArray();
+
+        if (!_model.AuthorIds.Contains(author.Id))
+        {
+            _model.AuthorIds = [.. _model.AuthorIds, author.Id];
+        }
+
+        Snackbar.Add($"Autor {author.DisplayName} registrado y agregado al libro.", Severity.Success);
+    }
+
+    private void OnImageChanged(string? version)
+    {
+        if (_product is not null)
+        {
+            _product.ImageVersion = version;
+        }
+    }
+
+    private async Task CreateEditorialAsync()
+    {
+        EditorialResponse? editorial = await Dialogs.ShowFormAsync<NovaBooks.Web.Components.Pages.Editorials.EditorialFormDialog, EditorialResponse>(
+            "Nueva editorial",
+            new DialogParameters<NovaBooks.Web.Components.Pages.Editorials.EditorialFormDialog>(),
+            DialogExtensions.WideFormOptions);
+
+        if (editorial is null || _catalogs is null)
+        {
+            return;
+        }
+
+        _catalogs.Editorials = _catalogs.Editorials
+            .Append(new CatalogOptionResponse { Id = editorial.Id, Code = editorial.Code, Name = editorial.Name })
+            .OrderBy(item => item.Name)
+            .ToArray();
+
+        _model.EditorialId = editorial.Id;
+
+        Snackbar.Add($"Editorial {editorial.Name} registrada y asignada al libro.", Severity.Success);
+    }
+}

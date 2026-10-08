@@ -1,30 +1,107 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">NovaBooks.Web</a>
-    </div>
-</div>
+@implements IDisposable
+@inject MenuState Menu
+@inject NavigationManager Navigation
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
+<nav aria-label="Menú principal" class="nb-nav-wrapper">
+    @if (Menu.Groups.Count == 0 && Menu.IsLoading)
+    {
+        <div class="nb-nav__loading">
+            @for (int index = 0; index < 6; index++)
+            {
+                <MudSkeleton SkeletonType="SkeletonType.Text" Width="80%" Class="nb-nav__skeleton" />
+            }
         </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
+    }
+    else if (Menu.Groups.Count == 0 && Menu.ErrorMessage is not null)
+    {
+        <div class="nb-nav__error">
+            <span>No se pudo cargar el menú.</span>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="Menu.ReloadAsync">Reintentar</MudButton>
         </div>
+    }
+    else
+    {
+        <MudNavMenu Class="nb-nav">
+            @foreach (var group in Menu.Groups)
+            {
+                @* Los módulos de operación se muestran como lista plana; la
+                   configuración se agrupa en un desplegable. *@
+                @if (group.Key == ConfigurationGroup && !Collapsed)
+                {
+                    <MudNavGroup Title="@group.Title" Icon="@Icons.Material.Outlined.Settings"
+                                 Expanded="_configurationExpanded"
+                                 ExpandedChanged="value => _configurationExpanded = value">
+                        @foreach (var item in group.Items)
+                        {
+                            @NavLink(item)
+                        }
+                    </MudNavGroup>
+                }
+                else
+                {
+                    @foreach (var item in group.Items)
+                    {
+                        @if (Collapsed)
+                        {
+                            <MudTooltip Text="@item.Title" Placement="Placement.Right" RootClass="nb-nav__tooltip">
+                                @NavLink(item)
+                            </MudTooltip>
+                        }
+                        else
+                        {
+                            @NavLink(item)
+                        }
+                    }
+                }
+            }
+        </MudNavMenu>
+    }
+</nav>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-    </nav>
-</div>
+@code {
+    private const string ConfigurationGroup = "configuracion";
 
+    /// <summary>Menú contraído a solo íconos (escritorio).</summary>
+    [Parameter]
+    public bool Collapsed { get; set; }
+
+    [Parameter]
+    public EventCallback OnNavigate { get; set; }
+
+    private bool _configurationExpanded;
+
+    private RenderFragment NavLink(NovaBooks.Application.DTOs.Menu.MenuItemResponse item) => __builder =>
+    {
+        <MudNavLink Href="@item.Href"
+                    Match="@(item.Href == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                    Icon="@MenuState.IconFor(item.Icon)"
+                    OnClick="OnNavigate">
+            @item.Title
+        </MudNavLink>
+    };
+
+    protected override void OnInitialized()
+    {
+        Menu.Changed += OnMenuChanged;
+        _configurationExpanded = IsInConfiguration();
+    }
+
+    /// <summary>
+    /// Abre "Configuración" si la página actual pertenece a ese grupo.
+    /// </summary>
+    private bool IsInConfiguration()
+    {
+        string path = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0];
+
+        return path.StartsWith("/usuarios", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("/roles", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("/permisos", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void Dispose()
+    {
+        Menu.Changed -= OnMenuChanged;
+    }
+
+    private void OnMenuChanged() => _ = InvokeAsync(StateHasChanged);
+}

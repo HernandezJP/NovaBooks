@@ -1,0 +1,51 @@
+@* Resumen de errores al guardar: aviso cuando el formulario tiene campos
+   inválidos y el mensaje de la API (validación o conflicto). Los errores
+   por campo se muestran junto a cada campo. *@
+
+@if (Result is { Succeeded: false } result)
+{
+    <MudAlert Severity="@(result.Failure == ApiFailure.Conflict ? Severity.Warning : Severity.Error)"
+              Dense="true" Class="mb-4 form-alert" role="alert">
+        <div class="form-alert__title">@Title(result)</div>
+        <div>@result.Message</div>
+        @{
+            string[] extra = result.ValidationErrors.Values
+                .SelectMany(messages => messages)
+                .Where(message => message != result.Message)
+                .Distinct()
+                .ToArray();
+        }
+        @if (extra.Length > 0)
+        {
+            <ul class="form-errors__list">
+                @foreach (string message in extra)
+                {
+                    <li>@message</li>
+                }
+            </ul>
+        }
+    </MudAlert>
+}
+else if (ShowInvalidHint)
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-4 form-alert" role="alert">
+        Revise los campos marcados en rojo antes de guardar.
+    </MudAlert>
+}
+
+@code {
+    [Parameter]
+    public IApiResultView? Result { get; set; }
+
+    /// <summary>Se intentó guardar con errores de validación en el formulario.</summary>
+    [Parameter]
+    public bool ShowInvalidHint { get; set; }
+
+    private static string Title(IApiResultView result) => result.Failure switch
+    {
+        ApiFailure.Conflict => "No se pudo guardar por un conflicto con datos existentes",
+        ApiFailure.Validation => "Hay datos que corregir",
+        ApiFailure.Forbidden => "Acceso denegado",
+        _ => "No se pudo guardar"
+    };
+}

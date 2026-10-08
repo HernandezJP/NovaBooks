@@ -1,7 +1,164 @@
-﻿@page "/"
+@page "/"
+@inject SessionState Session
+@inject UsersApi UsersApi
+@inject CustomersApi CustomersApi
+@inject ProductsApi ProductsApi
+@inject AuthorsApi AuthorsApi
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Inicio | NovaBooks</PageTitle>
 
-<h1>Hello, world!</h1>
+<PageHeader Title="@($"{Greeting()}, {Session.User?.UserName}")"
+            Description="Este es el resumen de su librería y los módulos a los que tiene acceso." />
 
-Welcome to your new app.
+@if (_stats.Count > 0)
+{
+    <div class="stat-grid">
+        @foreach (Stat stat in _stats)
+        {
+            <StatCard Tint="@stat.Tint" Icon="@stat.Icon" Label="@stat.Label" Href="@stat.Href"
+                      Loading="stat.Loading" Value="@stat.Value?.ToString("N0")" Error="@stat.Error" />
+        }
+    </div>
+}
+
+<div class="layout-half">
+    <Panel Title="Accesos rápidos" Subtitle="Tareas frecuentes según sus permisos." Icon="@Icons.Material.Outlined.Bolt">
+        @if (_shortcuts.Count == 0)
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.Lock" Title="Sin accesos disponibles"
+                        Message="Su usuario no tiene permisos sobre los módulos. Comuníquese con un administrador." />
+        }
+        else
+        {
+            <nav class="link-list" aria-label="Accesos rápidos">
+                @foreach (Shortcut shortcut in _shortcuts)
+                {
+                    <a href="@shortcut.Href" class="link-list__item">
+                        <span class="link-list__icon" aria-hidden="true"><MudIcon Icon="@shortcut.Icon" Size="Size.Small" /></span>
+                        <span class="link-list__text">
+                            <span class="link-list__title">@shortcut.Title</span>
+                            <span class="link-list__description">@shortcut.Description</span>
+                        </span>
+                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Class="link-list__chevron" />
+                    </a>
+                }
+            </nav>
+        }
+    </Panel>
+
+    <Panel Title="Su cuenta" Subtitle="Datos de la sesión actual." Icon="@Icons.Material.Outlined.AccountCircle">
+        @if (Session.User is { } user)
+        {
+            <div class="account-card">
+                <MudAvatar Class="user-menu__avatar user-menu__avatar--large">@Initials(user.UserName)</MudAvatar>
+                <div>
+                    <div class="account-card__name">@user.UserName</div>
+                    <div class="cell-secondary">@user.Email</div>
+                </div>
+            </div>
+            <dl class="detail-list">
+                <dt>Roles</dt>
+                <dd>
+                    @if (user.Roles.Count == 0)
+                    {
+                        <span class="cell-secondary">Sin roles asignados</span>
+                    }
+                    @foreach (string role in user.Roles)
+                    {
+                        <span class="role-pill mr-1">@role</span>
+                    }
+                </dd>
+                <dt>Permisos</dt>
+                <dd>@user.Permissions.Count permisos vigentes</dd>
+                <dt>Sesión</dt>
+                <dd>Válida en este navegador hasta cerrar sesión o expirar.</dd>
+            </dl>
+        }
+    </Panel>
+</div>
+
+@code {
+    private readonly List<Stat> _stats = [];
+    private readonly List<Shortcut> _shortcuts = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.HasPermission(AppPermissions.CatalogView))
+        {
+            _stats.Add(new Stat("peach", Icons.Material.Outlined.MenuBook, "Libros activos", "/productos",
+                async () => await ProductsApi.GetPagedAsync(null, StatusFilter.Active, null, 1, 1) is { Succeeded: true } r
+                    ? r.Data!.TotalItems : null));
+            _stats.Add(new Stat("sky", Icons.Material.Outlined.HistoryEdu, "Autores registrados", "/autores",
+                async () => await AuthorsApi.GetPagedAsync(null, StatusFilter.Active, 1, 1) is { Succeeded: true } r
+                    ? r.Data!.TotalItems : null));
+        }
+
+        if (Session.HasPermission(AppPermissions.CustomersView))
+        {
+            _stats.Add(new Stat("mint", Icons.Material.Outlined.Groups, "Clientes activos", "/clientes",
+                async () => await CustomersApi.GetPagedAsync(null, StatusFilter.Active, null, 1, 1) is { Succeeded: true } r
+                    ? r.Data!.TotalItems : null));
+        }
+
+        if (Session.HasPermission(AppPermissions.UsersView))
+        {
+            _stats.Add(new Stat("sand", Icons.Material.Outlined.Badge, "Usuarios activos", "/usuarios",
+                async () => await UsersApi.GetPagedAsync(null, StatusFilter.Active, 1, 1) is { Succeeded: true } r
+                    ? r.Data!.TotalItems : null));
+        }
+
+        AddShortcut(AppPermissions.CatalogCreate, Icons.Material.Outlined.LibraryAdd, "Registrar libro",
+            "Agregue un título al catálogo con su ISBN y precio.", "/productos/nuevo");
+        AddShortcut(AppPermissions.CustomersCreate, Icons.Material.Outlined.PersonAdd, "Registrar cliente",
+            "Alta de persona natural o jurídica con su NIT.", "/clientes/nuevo");
+        AddShortcut(AppPermissions.CatalogView, Icons.Material.Outlined.HistoryEdu, "Autores",
+            "Consulte y registre los autores del catálogo.", "/autores");
+        AddShortcut(AppPermissions.UsersView, Icons.Material.Outlined.ManageAccounts, "Usuarios del sistema",
+            "Cuentas de acceso del personal y sus roles.", "/usuarios");
+        AddShortcut(AppPermissions.RolesAssignPermissions, Icons.Material.Outlined.Key, "Roles y permisos",
+            "Defina qué puede hacer cada rol.", "/permisos");
+
+        // Totales livianos (pageSize = 1) en paralelo; cada tarjeta maneja su error.
+        await Task.WhenAll(_stats.Select(LoadStatAsync));
+    }
+
+    private void AddShortcut(string permission, string icon, string title, string description, string href)
+    {
+        if (Session.HasPermission(permission))
+        {
+            _shortcuts.Add(new Shortcut(icon, title, description, href));
+        }
+    }
+
+    private async Task LoadStatAsync(Stat stat)
+    {
+        stat.Value = await stat.Load();
+        stat.Error = stat.Value is null ? "No fue posible obtener el total." : null;
+        stat.Loading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string Greeting() => DateTime.Now.Hour switch
+    {
+        < 12 => "Buenos días",
+        < 19 => "Buenas tardes",
+        _ => "Buenas noches"
+    };
+
+    private static string Initials(string userName) =>
+        userName[..Math.Min(2, userName.Length)].ToUpperInvariant();
+
+    private sealed record Shortcut(string Icon, string Title, string Description, string Href);
+
+    private sealed class Stat(string tint, string icon, string label, string href, Func<Task<int?>> load)
+    {
+        public string Tint { get; } = tint;
+        public string Icon { get; } = icon;
+        public string Label { get; } = label;
+        public string Href { get; } = href;
+        public Func<Task<int?>> Load { get; } = load;
+        public bool Loading { get; set; } = true;
+        public int? Value { get; set; }
+        public string? Error { get; set; }
+    }
+}

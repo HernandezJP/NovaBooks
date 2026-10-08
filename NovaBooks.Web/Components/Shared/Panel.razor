@@ -1,0 +1,49 @@
+@* Tarjeta de contenido con encabezado (ícono, título serif, subtítulo y acciones). *@
+
+<section class="panel @Class" aria-labelledby="@_titleId">
+    @if (Title is not null)
+    {
+        <header class="panel__header">
+            <div class="panel__heading">
+                @if (Icon is not null)
+                {
+                    <MudIcon Icon="@Icon" Class="panel__icon" />
+                }
+                <div>
+                    <h2 id="@_titleId" class="panel__title">@Title</h2>
+                    @if (!string.IsNullOrWhiteSpace(Subtitle))
+                    {
+                        <p class="panel__subtitle">@Subtitle</p>
+                    }
+                </div>
+            </div>
+            @if (Actions is not null)
+            {
+                <div class="panel__actions">@Actions</div>
+            }
+        </header>
+    }
+    @ChildContent
+</section>
+
+@code {
+    private readonly string _titleId = $"panel-{Guid.NewGuid():N}";
+
+    [Parameter]
+    public string? Title { get; set; }
+
+    [Parameter]
+    public string? Subtitle { get; set; }
+
+    [Parameter]
+    public string? Icon { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    [Parameter]
+    public RenderFragment? Actions { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

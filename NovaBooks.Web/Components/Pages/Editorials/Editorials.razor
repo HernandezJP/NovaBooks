@@ -1,0 +1,273 @@
+@page "/editoriales"
+@attribute [RequirePermission(AppPermissions.CatalogView)]
+@implements IDisposable
+@using NovaBooks.Application.Common
+@using NovaBooks.Application.DTOs.Editorials
+@inject EditorialsApi EditorialsApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Editoriales | NovaBooks</PageTitle>
+
+<PageHeader Title="Editoriales" Description="Casas editoriales disponibles para asociar a los libros del catálogo." />
+
+<div class="stat-grid">
+    <StatCard Tint="sky" Icon="@Icons.Material.Outlined.AccountBalance" Label="Editoriales activas"
+              Loading="_activeCount is null && _countError is null" Value="@_activeCount?.ToString("N0")" Error="@_countError" />
+    <StatCard Tint="sand" Icon="@Icons.Material.Outlined.Block" Label="Editoriales inactivas"
+              Loading="_inactiveCount is null && _countError is null" Value="@_inactiveCount?.ToString("N0")" Error="@_countError" />
+</div>
+
+<Panel Title="Editoriales" Subtitle="Busque por nombre, código o correo." Icon="@Icons.Material.Outlined.AccountBalance">
+    <Actions>
+        @if (Session.HasPermission(AppPermissions.CatalogCreate))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="CreateAsync">
+                Nueva editorial
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+        <div class="list-toolbar">
+            <MudTextField @bind-Value="_search"
+                          Placeholder="Buscar editoriales"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          DebounceInterval="400" OnDebounceIntervalElapsed="SearchAsync"
+                          OnClearButtonClick="ClearSearchAsync"
+                          aria-label="Buscar editoriales" Class="list-toolbar__search" />
+
+            <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                <MudSelectItem Value="StatusFilter.Active">Activas</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.Inactive">Inactivas</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.All">Todas</MudSelectItem>
+            </MudSelect>
+        </div>
+
+        @if (_loading && _page is null)
+        {
+            <LoadingState />
+        }
+        else if (_error is not null)
+        {
+            <ErrorState Title="No fue posible cargar las editoriales" Message="@_error" OnRetry="LoadAsync" />
+        }
+        else if (_page is { Items.Count: 0 })
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.AccountBalance" Title="No se encontraron editoriales"
+                        Message="@(string.IsNullOrWhiteSpace(_search) ? "Registre la primera editorial con el botón Nueva editorial." : "Pruebe con otro término de búsqueda.")" />
+        }
+        else if (_page is not null)
+        {
+            <div class="table-scroll">
+                <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading"
+                          Breakpoint="Breakpoint.None" Class="nb-table">
+                    <HeaderContent>
+                        <MudTh>Nombre</MudTh>
+                        <MudTh>Contacto</MudTh>
+                        <MudTh Class="col-optional">Sitio web</MudTh>
+                        <MudTh Class="text-right">Libros</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh Class="nb-table__actions">Acciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary">@context.Name</div>
+                            <div class="cell-secondary">@context.Code</div>
+                        </MudTd>
+                        <MudTd>
+                            <div>@(context.Phone ?? "—")</div>
+                            @if (context.Email is not null)
+                            {
+                                <div class="cell-secondary">@context.Email</div>
+                            }
+                        </MudTd>
+                        <MudTd Class="col-optional">
+                            @if (context.Website is not null)
+                            {
+                                <a href="@context.Website" target="_blank" rel="noopener noreferrer">@context.Website</a>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </MudTd>
+                        <MudTd Class="text-right">@context.BooksCount</MudTd>
+                        <MudTd><StatusChip IsActive="context.IsActive" ActiveText="Activa" InactiveText="Inactiva" /></MudTd>
+                        <MudTd Class="nb-table__actions">
+                            @if (Session.HasAnyPermission(AppPermissions.CatalogUpdate, AppPermissions.CatalogDisable))
+                            {
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                         aria-label="@($"Acciones para {context.Name}")">
+                                    @if (Session.HasPermission(AppPermissions.CatalogUpdate))
+                                    {
+                                        <MudMenuItem Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(context)">Editar</MudMenuItem>
+                                    }
+                                    @if (Session.HasPermission(AppPermissions.CatalogDisable))
+                                    {
+                                        <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                     OnClick="() => ToggleStatusAsync(context)">
+                                            @(context.IsActive ? "Desactivar" : "Reactivar")
+                                        </MudMenuItem>
+                                    }
+                                </MudMenu>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+
+            <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                       TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+        }
+    </ChildContent>
+</Panel>
+
+@code {
+    private const int PageSize = 10;
+
+    private PagedResponse<EditorialResponse>? _page;
+    private string? _search;
+    private StatusFilter _status = StatusFilter.Active;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private int? _activeCount;
+    private int? _inactiveCount;
+    private string? _countError;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override Task OnInitializedAsync() => Task.WhenAll(LoadAsync(), LoadCountsAsync());
+
+    private async Task LoadCountsAsync()
+    {
+        var active = EditorialsApi.GetPagedAsync(null, StatusFilter.Active, 1, 1);
+        var inactive = EditorialsApi.GetPagedAsync(null, StatusFilter.Inactive, 1, 1);
+        await Task.WhenAll(active, inactive);
+
+        _countError = active.Result.Succeeded ? null : active.Result.Message;
+        _activeCount = active.Result.Data?.TotalItems;
+        _inactiveCount = inactive.Result.Data?.TotalItems;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<EditorialResponse>> result =
+            await EditorialsApi.GetPagedAsync(_search, _status, _pageNumber, PageSize, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private Task SearchAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        EditorialResponse? editorial = await Dialogs.ShowFormAsync<EditorialFormDialog, EditorialResponse>(
+            "Nueva editorial", new DialogParameters<EditorialFormDialog>(), DialogExtensions.WideFormOptions);
+
+        if (editorial is not null)
+        {
+            Snackbar.Add($"Editorial {editorial.Name} registrada.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadCountsAsync());
+        }
+    }
+
+    private async Task EditAsync(EditorialResponse editorial)
+    {
+        EditorialResponse? updated = await Dialogs.ShowFormAsync<EditorialFormDialog, EditorialResponse>(
+            "Editar editorial",
+            new DialogParameters<EditorialFormDialog> { { dialog => dialog.Editorial, editorial } },
+            DialogExtensions.WideFormOptions);
+
+        if (updated is not null)
+        {
+            Snackbar.Add($"Editorial {updated.Name} actualizada.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task ToggleStatusAsync(EditorialResponse editorial)
+    {
+        bool activate = !editorial.IsActive;
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Reactivar editorial" : "Desactivar editorial",
+            activate
+                ? $"¿Desea reactivar la editorial {editorial.Name}?"
+                : $"¿Desea desactivar la editorial {editorial.Name}? Los libros que ya la tienen la conservan, pero no podrá asignarse a libros nuevos.",
+            activate ? "Reactivar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<EditorialResponse> result = await EditorialsApi.ChangeStatusAsync(editorial.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Editorial {editorial.Name} {(activate ? "reactivada" : "desactivada")}.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadCountsAsync());
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

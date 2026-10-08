@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NovaBooks.Application.Authentication;
+using NovaBooks.Infrastructure.Security.Permissions;
 
 namespace NovaBooks.Api.Controllers;
 
@@ -23,7 +24,9 @@ public sealed class AuthController : ControllerBase
         typeof(LoginResponse),
         StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<LoginResponse>> Login(
         [FromBody] LoginRequest request,
         CancellationToken cancellationToken)
@@ -33,20 +36,64 @@ public sealed class AuthController : ControllerBase
             return ValidationProblem(ModelState);
         }
 
-        LoginResponse? response =
+        LoginResult result =
             await _authenticationService.LoginAsync(
                 request,
                 cancellationToken);
 
-        if (response is null)
+        return result.Status switch
         {
-            return Unauthorized(new
-            {
-                message = "El usuario o la contraseña son incorrectos."
-            });
-        }
+            LoginStatus.Succeeded => Ok(result.Response),
 
-        return Ok(response);
+            LoginStatus.LockedOut => LoginProblem(
+                "account_locked",
+                BuildLockoutMessage(result.LockoutEndUtc)),
+
+            LoginStatus.Disabled => LoginProblem(
+                "account_disabled",
+                "La cuenta se encuentra desactivada. " +
+                "Comuníquese con un administrador."),
+
+            _ => LoginProblem(
+                "invalid_credentials",
+                "El usuario o la contraseña son incorrectos.")
+        };
+    }
+
+    private ObjectResult LoginProblem(
+        string code,
+        string detail)
+    {
+        ProblemDetails problem = new()
+        {
+            Status = StatusCodes.Status401Unauthorized,
+            Title = "No fue posible iniciar sesión.",
+            Detail = detail,
+            Instance = HttpContext.Request.Path
+        };
+
+        problem.Extensions["code"] = code;
+
+        return new ObjectResult(problem)
+        {
+            StatusCode = StatusCodes.Status401Unauthorized,
+            ContentTypes = { "application/problem+json" }
+        };
+    }
+
+    private static string BuildLockoutMessage(
+        DateTimeOffset? lockoutEndUtc)
+    {
+        double remaining = lockoutEndUtc.HasValue
+            ? (lockoutEndUtc.Value - DateTimeOffset.UtcNow).TotalMinutes
+            : 1;
+
+        int minutes = Math.Max(1, (int)Math.Ceiling(remaining));
+
+        string unit = minutes == 1 ? "minuto" : "minutos";
+
+        return "La cuenta está bloqueada temporalmente. " +
+               $"Intente nuevamente en {minutes} {unit}.";
     }
 
     [Authorize]
@@ -77,7 +124,7 @@ public sealed class AuthController : ControllerBase
             .ToArray();
 
         string[] permissions = User
-            .FindAll("permission")
+            .FindAll(CustomClaimTypes.Permission)
             .Select(claim => claim.Value)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(permission => permission)

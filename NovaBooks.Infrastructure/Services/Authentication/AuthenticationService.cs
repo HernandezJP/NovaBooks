@@ -1,10 +1,6 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
 using NovaBooks.Application.Authentication;
 using NovaBooks.Infrastructure.Data.Identity;
-using System;
-using System.Collections.Generic;
-using System.Security.Claims;
-using System.Text;
 
 namespace NovaBooks.Infrastructure.Services.Authentication
 {
@@ -12,22 +8,22 @@ namespace NovaBooks.Infrastructure.Services.Authentication
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
-        private readonly RoleManager<ApplicationRole> _roleManager;
+        private readonly IUserAccessService _userAccessService;
         private readonly IJwtTokenService _jwtTokenService;
 
         public AuthenticationService(
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            RoleManager<ApplicationRole> roleManager,
+            IUserAccessService userAccessService,
             IJwtTokenService jwtTokenService)
         {
             _userManager = userManager;
             _signInManager = signInManager;
-            _roleManager = roleManager;
+            _userAccessService = userAccessService;
             _jwtTokenService = jwtTokenService;
         }
 
-        public async Task<LoginResponse?> LoginAsync(
+        public async Task<LoginResult> LoginAsync(
             LoginRequest request,
             CancellationToken cancellationToken = default)
         {
@@ -43,12 +39,12 @@ namespace NovaBooks.Infrastructure.Services.Authentication
 
             if (user is null)
             {
-                return null;
+                return LoginResult.InvalidCredentials();
             }
 
             if (await _userManager.IsLockedOutAsync(user))
             {
-                return null;
+                return LoginResult.LockedOut(user.LockoutEnd);
             }
 
             SignInResult signInResult =
@@ -57,59 +53,49 @@ namespace NovaBooks.Infrastructure.Services.Authentication
                     request.Password,
                     lockoutOnFailure: true);
 
+            if (signInResult.IsLockedOut)
+            {
+                return LoginResult.LockedOut(user.LockoutEnd);
+            }
+
             if (!signInResult.Succeeded)
             {
-                return null;
+                return LoginResult.InvalidCredentials();
             }
 
-            IList<string> userRoles =
-                await _userManager.GetRolesAsync(user);
-
-            HashSet<string> permissions =
-                new(StringComparer.OrdinalIgnoreCase);
-
-            IList<Claim> userClaims =
-                await _userManager.GetClaimsAsync(user);
-
-            foreach (Claim claim in userClaims
-                         .Where(claim =>
-                             claim.Type.Equals(
-                                 "permission",
-                                 StringComparison.OrdinalIgnoreCase)))
+            // El estado desactivado solo se revela con la
+            // contraseña correcta para no exponer cuentas.
+            if (!user.USU_Activo)
             {
-                permissions.Add(claim.Value);
+                return LoginResult.Disabled();
             }
 
-            foreach (string roleName in userRoles)
+            if (string.IsNullOrEmpty(user.SecurityStamp))
             {
-                ApplicationRole? role =
-                    await _roleManager.FindByNameAsync(roleName);
-
-                if (role is null)
-                {
-                    continue;
-                }
-
-                IList<Claim> roleClaims =
-                    await _roleManager.GetClaimsAsync(role);
-
-                foreach (Claim claim in roleClaims
-                             .Where(claim =>
-                                 claim.Type.Equals(
-                                     "permission",
-                                     StringComparison.OrdinalIgnoreCase)))
-                {
-                    permissions.Add(claim.Value);
-                }
+                await _userManager.UpdateSecurityStampAsync(user);
             }
+
+            UserAccessSnapshot? access =
+                await _userAccessService.GetAccessAsync(
+                    user.Id,
+                    cancellationToken);
+
+            if (access is null)
+            {
+                return LoginResult.InvalidCredentials();
+            }
+
+            user.USU_FechaUltimoAcceso = DateTime.UtcNow;
+
+            await _userManager.UpdateAsync(user);
 
             JwtTokenResult tokenResult =
                 _jwtTokenService.GenerateToken(
                     user,
-                    userRoles,
-                    permissions);
+                    access.Roles,
+                    access.Permissions);
 
-            return new LoginResponse
+            return LoginResult.Success(new LoginResponse
             {
                 AccessToken = tokenResult.AccessToken,
                 TokenType = "Bearer",
@@ -120,13 +106,10 @@ namespace NovaBooks.Infrastructure.Services.Authentication
                     Id = user.Id.ToString(),
                     UserName = user.UserName ?? string.Empty,
                     Email = user.Email ?? string.Empty,
-                    Roles = userRoles.ToArray(),
-                    Permissions = permissions
-                        .OrderBy(permission => permission)
-                        .ToArray()
+                    Roles = access.Roles,
+                    Permissions = access.Permissions
                 }
-            };
+            });
         }
     }
-
 }

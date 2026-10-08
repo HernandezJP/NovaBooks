@@ -18,12 +18,17 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        string connectionString =
+        string? connectionString =
             configuration.GetConnectionString(
-                "DefaultConnection")
-            ?? throw new InvalidOperationException(
-                "No se encontró la cadena de conexión " +
-                "'DefaultConnection'.");
+                "DefaultConnection");
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "No se configuró la cadena de conexión " +
+                "'DefaultConnection'. En desarrollo use " +
+                "'dotnet user-secrets' en NovaBooks.Api.");
+        }
 
         services.Configure<DatabaseOptions>(
             configuration.GetSection(
@@ -79,21 +84,18 @@ public static class DependencyInjection
 
         services.AddAuthorization(options =>
         {
-            foreach (string permission in
-                     SystemPermissions.GetAll())
-            {
-                options.AddPolicy(
-                    permission,
-                    policy =>
-                    {
-                        policy.RequireAuthenticatedUser();
-
-                        policy.AddRequirements(
-                            new PermissionRequirement(
-                                permission));
-                    });
-            }
+            // Todo endpoint sin [AllowAnonymous] exige autenticación.
+            options.FallbackPolicy =
+                new AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .Build();
         });
+
+        // Las políticas de permisos se crean dinámicamente
+        // a partir del prefijo de HasPermissionAttribute.
+        services.AddSingleton<
+            IAuthorizationPolicyProvider,
+            PermissionPolicyProvider>();
 
         services.AddSingleton<
             IAuthorizationHandler,
@@ -107,7 +109,24 @@ public static class DependencyInjection
             IPermissionService,
             PermissionService>();
 
+        services.AddScoped<ICustomerService, CustomerService>();
+
+        services.AddScoped<IProductService, ProductService>();
+
+        services.AddScoped<IAuthorService, AuthorService>();
+
+        services.AddScoped<IEditorialService, EditorialService>();
+
+        services.AddScoped<IProductImageService, ProductImageService>();
+
+        services.AddSingleton<IMenuService, MenuService>();
+
         services.AddScoped<DatabaseInitializer>();
+
+        services.AddSingleton<DatabaseReadiness>();
+
+        services.AddHostedService<
+            DatabaseInitializationHostedService>();
 
 
         return services;

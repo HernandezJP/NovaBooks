@@ -1,0 +1,35 @@
+@if (TotalItems > 0)
+{
+    <div class="list-pager">
+        <MudText Typo="Typo.caption" Class="list-pager__summary">
+            Mostrando @From–@To de @TotalItems
+        </MudText>
+        @if (TotalPages > 1)
+        {
+            <MudPagination Count="TotalPages" Selected="Page" SelectedChanged="PageChanged"
+                           Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                           BoundaryCount="1" MiddleCount="3" />
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Page { get; set; }
+
+    [Parameter]
+    public int PageSize { get; set; }
+
+    [Parameter]
+    public int TotalItems { get; set; }
+
+    [Parameter]
+    public int TotalPages { get; set; }
+
+    [Parameter]
+    public EventCallback<int> PageChanged { get; set; }
+
+    private int From => TotalItems == 0 ? 0 : ((Page - 1) * PageSize) + 1;
+
+    private int To => Math.Min(Page * PageSize, TotalItems);
+}

@@ -166,6 +166,17 @@ public sealed class DatabaseInitializer
             _roleManager,
             _configuration);
 
+        if (_options.SeedDemoData ?? _environment.IsDevelopment())
+        {
+            _logger.LogInformation(
+                "Cargando datos de demostración del catálogo.");
+
+            await DemoCatalogSeeder.SeedAsync(
+                _context,
+                Services.ProductImageStorage.GetDirectory(_configuration, _environment),
+                cancellationToken);
+        }
+
         _logger.LogInformation(
             "Los datos iniciales fueron creados correctamente.");
     }

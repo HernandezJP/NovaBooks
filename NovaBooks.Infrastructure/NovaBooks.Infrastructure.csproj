@@ -36,4 +36,9 @@
 		<Folder Include="Repositories\" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<!-- Portadas ilustradas para los datos de demostración. -->
+		<None Include="Data\Seed\Covers\*.png" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+
 </Project>

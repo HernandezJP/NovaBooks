@@ -1,0 +1,162 @@
+@using NovaBooks.Application.DTOs.Products
+@inject ProductsApi ProductsApi
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+@* Portada del libro: vista previa, carga y eliminación. *@
+
+<div class="cover">
+    <div class="cover__preview @(_imageUrl is null ? "cover__preview--empty" : "")">
+        @if (_uploading)
+        {
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+        }
+        else if (_imageUrl is not null)
+        {
+            <img src="@_imageUrl" alt="@($"Portada de {Title}")" />
+        }
+        else
+        {
+            <MudIcon Icon="@Icons.Material.Outlined.MenuBook" Size="Size.Large" />
+            <span>Sin portada</span>
+        }
+    </div>
+
+    @if (ProductId is null)
+    {
+        <MudText Typo="Typo.caption" Class="cell-secondary">
+            Podrá agregar la portada después de guardar el producto.
+        </MudText>
+    }
+    else if (!ReadOnly)
+    {
+        <div class="cover__actions">
+            <label class="cover__upload @(_uploading ? "cover__upload--disabled" : "")">
+                <InputFile OnChange="UploadAsync" accept=".jpg,.jpeg,.png,.webp" disabled="@_uploading"
+                           class="cover__input" aria-label="Seleccionar imagen de portada" />
+                <MudIcon Icon="@Icons.Material.Outlined.Upload" Size="Size.Small" />
+                @(_imageUrl is null ? "Subir imagen" : "Cambiar")
+            </label>
+            @if (_imageUrl is not null)
+            {
+                <MudTooltip Text="Quitar portada">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error"
+                                   aria-label="Quitar portada" Disabled="_uploading" OnClick="DeleteAsync" />
+                </MudTooltip>
+            }
+        </div>
+        <MudText Typo="Typo.caption" Class="cell-secondary">JPG, PNG o WebP · máximo 2 MB.</MudText>
+        @if (_error is not null)
+        {
+            <div class="field-error" role="alert">@_error</div>
+        }
+    }
+</div>
+
+@code {
+    private const long MaxBytes = 2 * 1024 * 1024;
+
+    private static readonly string[] AllowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    [Parameter]
+    public int? ProductId { get; set; }
+
+    [Parameter]
+    public string? ImageVersion { get; set; }
+
+    [Parameter]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool ReadOnly { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> ImageVersionChanged { get; set; }
+
+    private string? _imageUrl;
+    private bool _uploading;
+    private string? _error;
+
+    protected override void OnParametersSet()
+    {
+        _imageUrl = ProductId is null ? null : ProductsApi.ImageUrl(ProductId.Value, ImageVersion);
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs args)
+    {
+        _error = null;
+        IBrowserFile file = args.File;
+
+        // Validación previa en el navegador; la API vuelve a validar el contenido.
+        if (!AllowedTypes.Contains(file.ContentType))
+        {
+            _error = "Formato no admitido. Use una imagen JPG, PNG o WebP.";
+            return;
+        }
+
+        if (file.Size > MaxBytes)
+        {
+            _error = $"La imagen pesa {file.Size / 1024d / 1024d:N1} MB; el máximo es 2 MB.";
+            return;
+        }
+
+        _uploading = true;
+
+        try
+        {
+            await using Stream stream = file.OpenReadStream(MaxBytes);
+
+            ApiResult<ProductResponse> result =
+                await ProductsApi.UploadImageAsync(ProductId!.Value, stream, file.Name, file.ContentType);
+
+            if (result.Succeeded && result.Data is not null)
+            {
+                Snackbar.Add("Portada actualizada.", Severity.Success);
+                await ImageVersionChanged.InvokeAsync(result.Data.ImageVersion);
+            }
+            else
+            {
+                _error = result.Message;
+            }
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        bool confirmed = await Dialogs.ConfirmAsync(
+            "Quitar portada",
+            "¿Desea quitar la imagen de portada de este producto?",
+            "Quitar",
+            Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        _uploading = true;
+
+        try
+        {
+            ApiResult<bool> result = await ProductsApi.DeleteImageAsync(ProductId!.Value);
+
+            if (result.Succeeded)
+            {
+                Snackbar.Add("Portada eliminada.", Severity.Success);
+                await ImageVersionChanged.InvokeAsync(null);
+            }
+            else
+            {
+                _error = result.Message;
+            }
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+}

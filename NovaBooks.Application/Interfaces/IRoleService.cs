@@ -1,4 +1,4 @@
-﻿using NovaBooks.Application.Common;
+using NovaBooks.Application.Common;
 using NovaBooks.Application.DTOs.Roles;
 
 namespace NovaBooks.Application.Interfaces;
@@ -12,20 +12,26 @@ public interface IRoleService
         int id,
         CancellationToken cancellationToken = default);
 
-    Task<RoleOperationResult<RoleResponse>> CreateAsync(
+    Task<OperationResult<IReadOnlyCollection<RoleUserResponse>>>
+        GetUsersAsync(
+            int id,
+            CancellationToken cancellationToken = default);
+
+    Task<OperationResult<RoleResponse>> CreateAsync(
         CreateRoleRequest request,
         CancellationToken cancellationToken = default);
 
-    Task<RoleOperationResult<RoleResponse>> UpdateAsync(
+    Task<OperationResult<RoleResponse>> UpdateAsync(
         int id,
         UpdateRoleRequest request,
         CancellationToken cancellationToken = default);
 
-    Task<RoleOperationResult<bool>> DeleteAsync(
+    Task<OperationResult<RoleResponse>> ChangeStatusAsync(
         int id,
+        bool isActive,
         CancellationToken cancellationToken = default);
 
-    Task<RoleOperationResult<RoleResponse>> AssignPermissionsAsync(
+    Task<OperationResult<RoleResponse>> AssignPermissionsAsync(
         int id,
         AssignRolePermissionsRequest request,
         CancellationToken cancellationToken = default);

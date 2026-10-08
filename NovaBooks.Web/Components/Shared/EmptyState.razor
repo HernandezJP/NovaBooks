@@ -1,0 +1,26 @@
+<div class="state state--empty" role="status">
+    <MudIcon Icon="@Icon" Size="Size.Large" Class="state__icon" />
+    <MudText Typo="Typo.subtitle1" Class="state__title">@Title</MudText>
+    @if (!string.IsNullOrWhiteSpace(Message))
+    {
+        <MudText Typo="Typo.body2" Class="state__message">@Message</MudText>
+    }
+    @if (Action is not null)
+    {
+        <div class="state__action">@Action</div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string Icon { get; set; } = Icons.Material.Outlined.Inbox;
+
+    [Parameter]
+    public string Title { get; set; } = "No hay registros";
+
+    [Parameter]
+    public string? Message { get; set; }
+
+    [Parameter]
+    public RenderFragment? Action { get; set; }
+}

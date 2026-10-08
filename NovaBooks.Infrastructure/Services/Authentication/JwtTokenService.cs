@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using NovaBooks.Infrastructure.Data.Identity;
+using NovaBooks.Infrastructure.Security.Permissions;
 using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
@@ -66,7 +67,11 @@ namespace NovaBooks.Infrastructure.Services.Authentication
                 new DateTimeOffset(issuedAtUtc)
                     .ToUnixTimeSeconds()
                     .ToString(),
-                ClaimValueTypes.Integer64)
+                ClaimValueTypes.Integer64),
+
+            new Claim(
+                CustomClaimTypes.SecurityStamp,
+                SecurityStampHasher.Hash(user.SecurityStamp))
             ];
 
             foreach (string role in roles
@@ -81,7 +86,9 @@ namespace NovaBooks.Infrastructure.Services.Authentication
                              !string.IsNullOrWhiteSpace(permission))
                          .Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                claims.Add(new Claim("permission", permission));
+                claims.Add(new Claim(
+                    CustomClaimTypes.Permission,
+                    permission));
             }
 
             SymmetricSecurityKey securityKey = new(

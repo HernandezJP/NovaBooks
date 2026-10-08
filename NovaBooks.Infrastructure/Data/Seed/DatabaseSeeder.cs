@@ -339,6 +339,19 @@ public static class DatabaseSeeder
                 });
         }
 
+        if (!await context.Categorias.AnyAsync(cancellationToken))
+        {
+            context.Categorias.AddRange(
+                new PB_CATEGORIA { CAT_Codigo = "LITERATURA", CAT_Nombre = "Literatura" },
+                new PB_CATEGORIA { CAT_Codigo = "INFANTIL", CAT_Nombre = "Infantil y juvenil" },
+                new PB_CATEGORIA { CAT_Codigo = "EDUCACION", CAT_Nombre = "Educación y textos escolares" },
+                new PB_CATEGORIA { CAT_Codigo = "NO_FICCION", CAT_Nombre = "No ficción" },
+                new PB_CATEGORIA { CAT_Codigo = "CIENCIA", CAT_Nombre = "Ciencia y tecnología" },
+                new PB_CATEGORIA { CAT_Codigo = "RELIGION", CAT_Nombre = "Religión y espiritualidad" },
+                new PB_CATEGORIA { CAT_Codigo = "AUTOAYUDA", CAT_Nombre = "Desarrollo personal" },
+                new PB_CATEGORIA { CAT_Codigo = "ARTE", CAT_Nombre = "Arte y diseño" });
+        }
+
         if (!await context.Impuestos.AnyAsync(cancellationToken))
         {
             context.Impuestos.Add(new PB_IMPUESTO

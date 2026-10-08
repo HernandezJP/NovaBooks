@@ -1,0 +1,106 @@
+@using NovaBooks.Application.DTOs.Editorials
+@inject EditorialsApi EditorialsApi
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmit" id="editorial-form">
+            <DataAnnotationsValidator />
+            <ServerValidator Result="_saveResult" />
+            <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+            <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+            <div class="form-grid">
+                <MudTextField @bind-Value="_model.Name" For="@(() => _model.Name)" Label="Nombre *"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+                <MudTextField T="string" Value="@(Editorial?.Code ?? "Se asignará al guardar")" Label="Código"
+                              HelperText="Lo asigna el sistema automáticamente."
+                              ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)" Label="Correo electrónico"
+                              InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_model.Phone" For="@(() => _model.Phone)" Label="Teléfono"
+                              InputType="InputType.Telephone" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+            <MudTextField @bind-Value="_model.Website" For="@(() => _model.Website)" Label="Sitio web"
+                          Placeholder="https://" InputType="InputType.Url"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit"
+                   form="editorial-form" Disabled="_saving">
+            @if (_saving)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Guardar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Editorial a editar; null para crear.</summary>
+    [Parameter]
+    public EditorialResponse? Editorial { get; set; }
+
+    private SaveEditorialRequest _model = new();
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    protected override void OnInitialized()
+    {
+        if (Editorial is not null)
+        {
+            _model = new SaveEditorialRequest
+            {
+                Name = Editorial.Name,
+                Website = Editorial.Website,
+                Email = Editorial.Email,
+                Phone = Editorial.Phone
+            };
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<EditorialResponse> result = Editorial is null
+                ? await EditorialsApi.CreateAsync(_model)
+                : await EditorialsApi.UpdateAsync(Editorial.Id, _model);
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OnInvalidSubmit()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+    }
+
+    private void Cancel() => Dialog.Cancel();
+}

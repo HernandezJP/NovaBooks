@@ -17,6 +17,6 @@ public sealed class HasPermissionAttribute : AuthorizeAttribute
                 nameof(permission));
         }
 
-        Policy = permission;
+        Policy = PermissionPolicyProvider.PolicyPrefix + permission;
     }
 }

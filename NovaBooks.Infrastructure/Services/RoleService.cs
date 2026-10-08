@@ -1,12 +1,11 @@
-﻿using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Rewrite;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using NovaBooks.Application.Common;
 using NovaBooks.Application.DTOs.Roles;
 using NovaBooks.Application.Interfaces;
+using NovaBooks.Infrastructure.Data;
 using NovaBooks.Infrastructure.Data.Identity;
 using NovaBooks.Infrastructure.Security.Permissions;
-using System.Security.Claims;
 
 namespace NovaBooks.Infrastructure.Services;
 
@@ -14,55 +13,70 @@ public sealed class RoleService : IRoleService
 {
     private const string AdministratorRole = "Administrador";
 
+    private readonly AppDbContext _context;
     private readonly RoleManager<ApplicationRole> _roleManager;
-    private readonly UserManager<ApplicationUser> _userManager;
 
     public RoleService(
-        RoleManager<ApplicationRole> roleManager,
-        UserManager<ApplicationUser> userManager)
+        AppDbContext context,
+        RoleManager<ApplicationRole> roleManager)
     {
+        _context = context;
         _roleManager = roleManager;
-        _userManager = userManager;
     }
 
     public async Task<IReadOnlyCollection<RoleResponse>> GetAllAsync(
         CancellationToken cancellationToken = default)
     {
-        List<ApplicationRole> roles =
-            await _roleManager.Roles
-                .AsNoTracking()
-                .OrderBy(role => role.Name)
-                .ToListAsync(cancellationToken);
-
-        List<RoleResponse> responses = [];
-
-        foreach (ApplicationRole role in roles)
-        {
-            responses.Add(await MapAsync(role));
-        }
-
-        return responses;
+        return await QueryRolesAsync(
+            roleId: null,
+            cancellationToken);
     }
 
     public async Task<RoleResponse?> GetByIdAsync(
         int id,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        ApplicationRole? role =
-            await _roleManager.FindByIdAsync(
-                id.ToString());
-
-        if (role is null)
-        {
-            return null;
-        }
-
-        return await MapAsync(role);
+        return (await QueryRolesAsync(id, cancellationToken))
+            .SingleOrDefault();
     }
 
-    public async Task<RoleOperationResult<RoleResponse>> CreateAsync(
+    public async Task<OperationResult<IReadOnlyCollection<RoleUserResponse>>>
+        GetUsersAsync(
+            int id,
+            CancellationToken cancellationToken = default)
+    {
+        bool exists =
+            await _context.Roles.AnyAsync(
+                role => role.Id == id,
+                cancellationToken);
+
+        if (!exists)
+        {
+            return OperationResult<IReadOnlyCollection<RoleUserResponse>>
+                .Missing("El rol solicitado no existe.");
+        }
+
+        List<RoleUserResponse> users =
+            await (from userRole in _context.UserRoles
+                   join user in _context.Users
+                       on userRole.UserId equals user.Id
+                   where userRole.RoleId == id
+                   orderby user.UserName
+                   select new RoleUserResponse
+                   {
+                       Id = user.Id,
+                       UserName = user.UserName ?? string.Empty,
+                       Email = user.Email ?? string.Empty,
+                       IsActive = user.USU_Activo
+                   })
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+
+        return OperationResult<IReadOnlyCollection<RoleUserResponse>>
+            .Success(users);
+    }
+
+    public async Task<OperationResult<RoleResponse>> CreateAsync(
         CreateRoleRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -70,31 +84,34 @@ public sealed class RoleService : IRoleService
 
         string roleName = request.Name.Trim();
 
+        // RoleExistsAsync también considera roles inactivos.
         if (await _roleManager.RoleExistsAsync(roleName))
         {
-            return RoleOperationResult<RoleResponse>.Failure(
+            return OperationResult<RoleResponse>.Conflict(
                 "Ya existe un rol con ese nombre.");
         }
 
         ApplicationRole role = new()
         {
-            Name = roleName
+            Name = roleName,
+            ROL_Descripcion = NormalizeOptional(request.Description),
+            ROL_Activo = true,
+            ROL_FechaCreacion = DateTime.UtcNow
         };
 
-        IdentityResult createResult =
+        IdentityResult result =
             await _roleManager.CreateAsync(role);
 
-        if (!createResult.Succeeded)
+        if (!result.Succeeded)
         {
-            return IdentityFailure<RoleResponse>(
-                createResult);
+            return IdentityFailure<RoleResponse>(result);
         }
 
-        return RoleOperationResult<RoleResponse>.Success(
-            await MapAsync(role));
+        return OperationResult<RoleResponse>.Success(
+            (await GetByIdAsync(role.Id, cancellationToken))!);
     }
 
-    public async Task<RoleOperationResult<RoleResponse>> UpdateAsync(
+    public async Task<OperationResult<RoleResponse>> UpdateAsync(
         int id,
         UpdateRoleRequest request,
         CancellationToken cancellationToken = default)
@@ -102,22 +119,26 @@ public sealed class RoleService : IRoleService
         cancellationToken.ThrowIfCancellationRequested();
 
         ApplicationRole? role =
-            await _roleManager.FindByIdAsync(
-                id.ToString());
+            await _roleManager.FindByIdAsync(id.ToString());
 
         if (role is null)
         {
-            return RoleOperationResult<RoleResponse>.Missing(
+            return OperationResult<RoleResponse>.Missing(
                 "El rol solicitado no existe.");
         }
 
-        if (IsAdministratorRole(role))
-        {
-            return RoleOperationResult<RoleResponse>.Failure(
-                "El rol Administrador no puede ser modificado.");
-        }
-
         string newName = request.Name.Trim();
+
+        bool renames = !string.Equals(
+            role.Name,
+            newName,
+            StringComparison.Ordinal);
+
+        if (renames && IsProtected(role))
+        {
+            return OperationResult<RoleResponse>.Conflict(
+                "El rol Administrador no puede renombrarse.");
+        }
 
         ApplicationRole? existingRole =
             await _roleManager.FindByNameAsync(newName);
@@ -125,74 +146,79 @@ public sealed class RoleService : IRoleService
         if (existingRole is not null &&
             existingRole.Id != role.Id)
         {
-            return RoleOperationResult<RoleResponse>.Failure(
+            return OperationResult<RoleResponse>.Conflict(
                 "Ya existe un rol con ese nombre.");
         }
 
         role.Name = newName;
-
-        IdentityResult updateResult =
-            await _roleManager.UpdateAsync(role);
-
-        if (!updateResult.Succeeded)
-        {
-            return IdentityFailure<RoleResponse>(
-                updateResult);
-        }
-
-        return RoleOperationResult<RoleResponse>.Success(
-            await MapAsync(role));
-    }
-
-    public async Task<RoleOperationResult<bool>> DeleteAsync(
-    int id,
-    CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        ApplicationRole? role =
-            await _roleManager.FindByIdAsync(
-                id.ToString());
-
-        if (role is null)
-        {
-            return RoleOperationResult<bool>.Missing(
-                "El rol solicitado no existe.");
-        }
-
-        if (IsAdministratorRole(role))
-        {
-            return RoleOperationResult<bool>.Failure(
-                "El rol Administrador no puede ser desactivado.");
-        }
-
-        string roleName =
-            role.Name ?? string.Empty;
-
-        IList<ApplicationUser> users =
-            await _userManager.GetUsersInRoleAsync(roleName);
-
-        if (users.Count > 0)
-        {
-            return RoleOperationResult<bool>.Failure(
-                "No se puede desactivar el rol porque está " +
-                $"asignado a {users.Count} usuario(s).");
-        }
-
-        role.ROL_Activo = false;
+        role.ROL_Descripcion = NormalizeOptional(request.Description);
+        role.ROL_FechaModificacion = DateTime.UtcNow;
 
         IdentityResult result =
             await _roleManager.UpdateAsync(role);
 
         if (!result.Succeeded)
         {
-            return IdentityFailure<bool>(result);
+            return IdentityFailure<RoleResponse>(result);
         }
 
-        return RoleOperationResult<bool>.Success(true);
+        return OperationResult<RoleResponse>.Success(
+            (await GetByIdAsync(role.Id, cancellationToken))!);
     }
 
-    public async Task<RoleOperationResult<RoleResponse>>
+    public async Task<OperationResult<RoleResponse>> ChangeStatusAsync(
+        int id,
+        bool isActive,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        ApplicationRole? role =
+            await _roleManager.FindByIdAsync(id.ToString());
+
+        if (role is null)
+        {
+            return OperationResult<RoleResponse>.Missing(
+                "El rol solicitado no existe.");
+        }
+
+        if (!isActive)
+        {
+            if (IsProtected(role))
+            {
+                return OperationResult<RoleResponse>.Conflict(
+                    "El rol Administrador no puede ser desactivado.");
+            }
+
+            int usersCount =
+                await _context.UserRoles.CountAsync(
+                    userRole => userRole.RoleId == role.Id,
+                    cancellationToken);
+
+            if (usersCount > 0)
+            {
+                return OperationResult<RoleResponse>.Conflict(
+                    "No se puede desactivar el rol porque está " +
+                    $"asignado a {usersCount} usuario(s).");
+            }
+        }
+
+        role.ROL_Activo = isActive;
+        role.ROL_FechaModificacion = DateTime.UtcNow;
+
+        IdentityResult result =
+            await _roleManager.UpdateAsync(role);
+
+        if (!result.Succeeded)
+        {
+            return IdentityFailure<RoleResponse>(result);
+        }
+
+        return OperationResult<RoleResponse>.Success(
+            (await GetByIdAsync(role.Id, cancellationToken))!);
+    }
+
+    public async Task<OperationResult<RoleResponse>>
         AssignPermissionsAsync(
             int id,
             AssignRolePermissionsRequest request,
@@ -201,191 +227,182 @@ public sealed class RoleService : IRoleService
         cancellationToken.ThrowIfCancellationRequested();
 
         ApplicationRole? role =
-            await _roleManager.FindByIdAsync(
-                id.ToString());
+            await _roleManager.FindByIdAsync(id.ToString());
 
         if (role is null)
         {
-            return RoleOperationResult<RoleResponse>.Missing(
+            return OperationResult<RoleResponse>.Missing(
                 "El rol solicitado no existe.");
         }
 
-        if (IsAdministratorRole(role))
+        if (IsProtected(role))
         {
-            return RoleOperationResult<RoleResponse>.Failure(
+            return OperationResult<RoleResponse>.Conflict(
                 "Los permisos del rol Administrador " +
                 "no pueden ser modificados.");
         }
 
-        string[] requestedPermissions =
-            request.Permissions
-                .Where(permission =>
-                    !string.IsNullOrWhiteSpace(permission))
-                .Select(permission => permission.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+        Dictionary<string, string> knownPermissions =
+            SystemPermissions.GetAll().ToDictionary(
+                permission => permission,
+                permission => permission,
+                StringComparer.OrdinalIgnoreCase);
 
-        HashSet<string> validPermissions = new(
-            SystemPermissions.GetAll(),
+        string[] requested = request.Permissions
+            .Where(permission => !string.IsNullOrWhiteSpace(permission))
+            .Select(permission => permission.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        string[] unknown = requested
+            .Where(permission => !knownPermissions.ContainsKey(permission))
+            .ToArray();
+
+        if (unknown.Length > 0)
+        {
+            return OperationResult<RoleResponse>.Failure(
+                "Los siguientes permisos no existen: " +
+                string.Join(", ", unknown));
+        }
+
+        HashSet<string> target = new(
+            requested.Select(permission => knownPermissions[permission]),
             StringComparer.OrdinalIgnoreCase);
 
-        string[] invalidPermissions =
-            requestedPermissions
-                .Where(permission =>
-                    !validPermissions.Contains(permission))
-                .ToArray();
-
-        if (invalidPermissions.Length > 0)
-        {
-            return RoleOperationResult<RoleResponse>.Failure(
-                "Los siguientes permisos no existen: " +
-                string.Join(", ", invalidPermissions));
-        }
-
-        IList<Claim> existingClaims =
-            await _roleManager.GetClaimsAsync(role);
-
-        Claim[] existingPermissionClaims =
-            existingClaims
+        List<IdentityRoleClaim<int>> existingClaims =
+            await _context.RoleClaims
                 .Where(claim =>
-                    claim.Type.Equals(
-                        CustomClaimTypes.Permission,
-                        StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+                    claim.RoleId == role.Id &&
+                    claim.ClaimType == CustomClaimTypes.Permission)
+                .ToListAsync(cancellationToken);
 
-        string[] existingPermissionValues =
-            existingPermissionClaims
-                .Select(claim => claim.Value)
-                .ToArray();
+        // Se conserva una sola fila por permiso solicitado; se eliminan
+        // las demás (incluidos duplicados históricos).
+        HashSet<string> kept = new(StringComparer.OrdinalIgnoreCase);
 
-        foreach (Claim claim in existingPermissionClaims)
+        foreach (IdentityRoleClaim<int> claim in existingClaims)
         {
-            IdentityResult removeResult =
-                await _roleManager.RemoveClaimAsync(
-                    role,
-                    claim);
-
-            if (!removeResult.Succeeded)
+            if (claim.ClaimValue is not null &&
+                target.Contains(claim.ClaimValue) &&
+                kept.Add(claim.ClaimValue))
             {
-                await RestorePermissionsAsync(
-                    role,
-                    existingPermissionValues);
-
-                return IdentityFailure<RoleResponse>(
-                    removeResult);
+                continue;
             }
+
+            _context.RoleClaims.Remove(claim);
         }
 
-        foreach (string permission in requestedPermissions)
+        foreach (string permission in target.Except(kept))
         {
-            IdentityResult addResult =
-                await _roleManager.AddClaimAsync(
-                    role,
-                    new Claim(
-                        CustomClaimTypes.Permission,
-                        permission));
-
-            if (!addResult.Succeeded)
+            _context.RoleClaims.Add(new IdentityRoleClaim<int>
             {
-                await RemoveAllPermissionClaimsAsync(role);
-
-                await RestorePermissionsAsync(
-                    role,
-                    existingPermissionValues);
-
-                return IdentityFailure<RoleResponse>(
-                    addResult);
-            }
+                RoleId = role.Id,
+                ClaimType = CustomClaimTypes.Permission,
+                ClaimValue = permission
+            });
         }
 
-        return RoleOperationResult<RoleResponse>.Success(
-            await MapAsync(role));
+        role.ROL_FechaModificacion = DateTime.UtcNow;
+
+        // Un único SaveChanges: el reemplazo es atómico.
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return OperationResult<RoleResponse>.Success(
+            (await GetByIdAsync(role.Id, cancellationToken))!);
     }
 
-    private async Task<RoleResponse> MapAsync(
-        ApplicationRole role)
+    private async Task<IReadOnlyCollection<RoleResponse>> QueryRolesAsync(
+        int? roleId,
+        CancellationToken cancellationToken)
     {
-        IList<Claim> claims =
-            await _roleManager.GetClaimsAsync(role);
+        IQueryable<ApplicationRole> rolesQuery =
+            _context.Roles.AsNoTracking();
 
-        string[] permissions =
-            claims
+        IQueryable<IdentityRoleClaim<int>> claimsQuery =
+            _context.RoleClaims.AsNoTracking();
+
+        if (roleId.HasValue)
+        {
+            rolesQuery = rolesQuery.Where(role => role.Id == roleId);
+            claimsQuery = claimsQuery.Where(claim => claim.RoleId == roleId);
+        }
+
+        var roles =
+            await rolesQuery
+                .OrderBy(role => role.Name)
+                .Select(role => new
+                {
+                    role.Id,
+                    role.Name,
+                    role.ROL_Descripcion,
+                    role.ROL_Activo,
+                    UsersCount = _context.UserRoles.Count(
+                        userRole => userRole.RoleId == role.Id)
+                })
+                .ToListAsync(cancellationToken);
+
+        var claims =
+            await claimsQuery
                 .Where(claim =>
-                    claim.Type.Equals(
-                        CustomClaimTypes.Permission,
-                        StringComparison.OrdinalIgnoreCase))
-                .Select(claim => claim.Value)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(permission => permission)
-                .ToArray();
+                    claim.ClaimType == CustomClaimTypes.Permission &&
+                    claim.ClaimValue != null)
+                .Select(claim => new
+                {
+                    claim.RoleId,
+                    claim.ClaimValue
+                })
+                .ToListAsync(cancellationToken);
 
-        string roleName =
-            role.Name ?? string.Empty;
+        ILookup<int, string> permissionsByRole =
+            claims.ToLookup(
+                claim => claim.RoleId,
+                claim => claim.ClaimValue!);
 
-        IList<ApplicationUser> users =
-            await _userManager.GetUsersInRoleAsync(roleName);
-
-        return new RoleResponse
-        {
-            Id = role.Id,
-            Name = roleName,
-            IsActive = role.ROL_Activo,
-            UsersCount = users.Count,
-            Permissions = permissions
-        };
+        return roles
+            .Select(role => new RoleResponse
+            {
+                Id = role.Id,
+                Name = role.Name ?? string.Empty,
+                Description = role.ROL_Descripcion,
+                IsActive = role.ROL_Activo,
+                IsProtected = IsAdministratorName(role.Name),
+                UsersCount = role.UsersCount,
+                Permissions = permissionsByRole[role.Id]
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(permission => permission)
+                    .ToArray()
+            })
+            .ToArray();
     }
 
-    private async Task RemoveAllPermissionClaimsAsync(
-        ApplicationRole role)
+    private static bool IsProtected(ApplicationRole role)
     {
-        IList<Claim> claims =
-            await _roleManager.GetClaimsAsync(role);
-
-        foreach (Claim claim in claims.Where(claim =>
-                     claim.Type.Equals(
-                         CustomClaimTypes.Permission,
-                         StringComparison.OrdinalIgnoreCase)))
-        {
-            await _roleManager.RemoveClaimAsync(
-                role,
-                claim);
-        }
+        return IsAdministratorName(role.Name);
     }
 
-    private async Task RestorePermissionsAsync(
-        ApplicationRole role,
-        IEnumerable<string> permissions)
-    {
-        foreach (string permission in permissions
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            await _roleManager.AddClaimAsync(
-                role,
-                new Claim(
-                    CustomClaimTypes.Permission,
-                    permission));
-        }
-    }
-
-    private static bool IsAdministratorRole(
-        ApplicationRole role)
+    private static bool IsAdministratorName(string? roleName)
     {
         return string.Equals(
-            role.Name,
+            roleName,
             AdministratorRole,
             StringComparison.OrdinalIgnoreCase);
     }
 
-    private static RoleOperationResult<T>
-        IdentityFailure<T>(
-            IdentityResult identityResult)
+    private static string? NormalizeOptional(string? value)
     {
-        string[] errors =
-            identityResult.Errors
-                .Select(error => error.Description)
-                .Distinct()
-                .ToArray();
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
+    }
 
-        return RoleOperationResult<T>.Failure(errors);
+    private static OperationResult<T> IdentityFailure<T>(
+        IdentityResult identityResult)
+    {
+        string[] errors = identityResult.Errors
+            .Select(error => error.Description)
+            .Distinct()
+            .ToArray();
+
+        return OperationResult<T>.Failure(errors);
     }
 }

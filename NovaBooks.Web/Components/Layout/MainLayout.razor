@@ -1,23 +1,241 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject SessionState Session
+@inject MenuState Menu
+@inject AuthService Auth
+@inject NavigationManager Navigation
+@inject IDialogService Dialogs
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+<MudThemeProvider Theme="NovaTheme.Instance" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
+<MudBreakpointProvider OnBreakpointChanged="OnBreakpointChanged">
+    <MudLayout>
+        <MudAppBar Elevation="0" Class="app-bar">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                           aria-label="@(_isDesktop ? (_collapsed ? "Expandir menú" : "Contraer menú") : "Abrir menú")"
+                           OnClick="ToggleDrawer" Class="app-bar__toggle" />
 
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
+            <div class="app-bar__title">
+                <span class="app-bar__section">Panel principal</span>
+                <span class="app-bar__divider" aria-hidden="true"></span>
+            </div>
+
+            <MudSpacer />
+
+            @if (Session.HasPermission(AppPermissions.CatalogView))
+            {
+                <form class="app-search" role="search" @onsubmit="SearchBooks" @onsubmit:preventDefault="true">
+                    <MudIcon Icon="@Icons.Material.Outlined.Search" Size="Size.Small" Class="app-search__icon" />
+                    <input type="search" @bind="_search" @bind:event="oninput" placeholder="Buscar libros, autores o ISBN…"
+                           aria-label="Buscar libros" class="app-search__input" />
+                </form>
+            }
+
+            @if (Session.User is { } user)
+            {
+                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                         aria-label="Menú de perfil" Class="user-menu">
+                    <ActivatorContent>
+                        <div class="user-menu__activator">
+                            <MudAvatar Size="Size.Small" Class="user-menu__avatar">@Initials(user.UserName)</MudAvatar>
+                            <div class="user-menu__text">
+                                <span class="user-menu__name">@user.UserName</span>
+                                <span class="user-menu__role">@PrimaryRole(user.Roles)</span>
+                            </div>
+                            <MudIcon Icon="@Icons.Material.Filled.ExpandMore" Size="Size.Small" Class="user-menu__chevron" />
+                        </div>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <div class="user-menu__header">
+                            <MudAvatar Class="user-menu__avatar user-menu__avatar--large">@Initials(user.UserName)</MudAvatar>
+                            <div>
+                                <div class="user-menu__name">@user.UserName</div>
+                                <div class="user-menu__email">@user.Email</div>
+                                <div class="user-menu__roles">
+                                    @foreach (string role in user.Roles)
+                                    {
+                                        <span class="role-pill">@role</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        <MudDivider />
+                        <MudMenuItem Icon="@Icons.Material.Outlined.Logout" OnClick="LogoutAsync" Class="user-menu__logout">
+                            Cerrar sesión
+                        </MudMenuItem>
+                    </ChildContent>
+                </MudMenu>
+            }
+        </MudAppBar>
+
+        <MudDrawer Open="DrawerOpen" OpenChanged="OnDrawerOpenChanged"
+                   Variant="@(_isDesktop ? DrawerVariant.Mini : DrawerVariant.Temporary)"
+                   ClipMode="DrawerClipMode.Never" Elevation="0" MiniWidth="72px" Width="232px"
+                   Class="@($"nb-sidebar {(_isDesktop && _collapsed ? "nb-sidebar--collapsed" : "")}")">
+            <a href="/" class="nb-sidebar__brand" aria-label="NovaBooks, ir al inicio">
+                <span class="nb-sidebar__logo" aria-hidden="true">
+                    <MudIcon Icon="@Icons.Material.Filled.AutoStories" />
+                </span>
+                <span class="nb-sidebar__brand-text">
+                    <span class="nb-sidebar__name">NovaBooks</span>
+                </span>
+            </a>
+
+            <NavMenu Collapsed="@(_isDesktop && _collapsed)" OnNavigate="OnNavigate" />
+
+            <div class="nb-sidebar__bottom">
+                <div class="nb-sidebar__art">
+                    <BookshelfIllustration Class="nb-sidebar__illustration" />
+                    <p class="nb-sidebar__quote">Buenas historias hacen grandes días</p>
+                    <span class="nb-sidebar__quote-line" aria-hidden="true"></span>
+                </div>
+
+                @if (_isDesktop && _collapsed)
+                {
+                    <MudTooltip Text="Cerrar sesión" Placement="Placement.Right" RootClass="nb-nav__tooltip">
+                        @LogoutButton
+                    </MudTooltip>
+                }
+                else
+                {
+                    @LogoutButton
+                }
+            </div>
+        </MudDrawer>
+
+        <MudMainContent>
+            <div class="page-content">
+                @Body
+            </div>
+        </MudMainContent>
+    </MudLayout>
+</MudBreakpointProvider>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
+    Ocurrió un error inesperado.
+    <a href="." class="reload">Recargar</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+
+    private bool _isDesktop = true;
+    private bool _collapsed;
+    private bool _mobileOpen;
+    private string? _search;
+
+    private RenderFragment LogoutButton => __builder =>
+    {
+        <button type="button" class="nb-sidebar__logout" @onclick="LogoutAsync">
+            <MudIcon Icon="@Icons.Material.Outlined.Logout" Size="Size.Small" />
+            <span class="nb-sidebar__logout-text">Cerrar sesión</span>
+        </button>
+    };
+
+    private bool DrawerOpen => _isDesktop ? !_collapsed : _mobileOpen;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnStateChanged;
+        Menu.Changed += OnStateChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+
+        if (Session.IsAuthenticated)
+        {
+            await Menu.EnsureLoadedAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnStateChanged;
+        Menu.Changed -= OnStateChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        _ = InvokeAsync(StateHasChanged);
+
+    private void OnBreakpointChanged(Breakpoint breakpoint)
+    {
+        _isDesktop = breakpoint >= Breakpoint.Md;
+        _mobileOpen = false;
+    }
+
+    private void ToggleDrawer()
+    {
+        if (_isDesktop)
+        {
+            _collapsed = !_collapsed;
+        }
+        else
+        {
+            _mobileOpen = !_mobileOpen;
+        }
+    }
+
+    private void OnDrawerOpenChanged(bool open)
+    {
+        if (_isDesktop)
+        {
+            _collapsed = !open;
+        }
+        else
+        {
+            _mobileOpen = open;
+        }
+    }
+
+    private void OnNavigate()
+    {
+        if (!_isDesktop)
+        {
+            _mobileOpen = false;
+        }
+    }
+
+    private void SearchBooks()
+    {
+        string term = _search?.Trim() ?? string.Empty;
+
+        Navigation.NavigateTo(term.Length == 0
+            ? "/productos"
+            : $"/productos?q={Uri.EscapeDataString(term)}");
+    }
+
+    private async Task LogoutAsync()
+    {
+        bool confirmed = await Dialogs.ConfirmAsync(
+            "Cerrar sesión",
+            "¿Desea cerrar la sesión en este equipo?",
+            "Cerrar sesión",
+            Color.Primary);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        await Auth.LogoutAsync();
+        Navigation.NavigateTo("login", replace: true);
+    }
+
+    private static string Initials(string userName)
+    {
+        string[] parts = userName.Split([' ', '.', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
+
+        string initials = parts.Length >= 2
+            ? $"{parts[0][0]}{parts[1][0]}"
+            : userName[..Math.Min(2, userName.Length)];
+
+        return initials.ToUpperInvariant();
+    }
+
+    private static string PrimaryRole(IReadOnlyCollection<string> roles) =>
+        roles.FirstOrDefault(role => role == "Administrador") ?? roles.FirstOrDefault() ?? "Sin rol";
+}

@@ -1,0 +1,85 @@
+@implements IDisposable
+
+@* Muestra junto a cada campo los errores de validación devueltos por la
+   API (400). El mensaje desaparece al modificar el campo. *@
+
+@code {
+    [CascadingParameter]
+    private EditContext? EditContext { get; set; }
+
+    [Parameter]
+    public IApiResultView? Result { get; set; }
+
+    private ValidationMessageStore? _store;
+    private EditContext? _subscribedContext;
+    private IApiResultView? _appliedResult;
+
+    protected override void OnParametersSet()
+    {
+        if (EditContext is null)
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(_subscribedContext, EditContext))
+        {
+            Unsubscribe();
+            _store = new ValidationMessageStore(EditContext);
+            EditContext.OnFieldChanged += OnFieldChanged;
+            EditContext.OnValidationRequested += OnValidationRequested;
+            _subscribedContext = EditContext;
+        }
+
+        if (ReferenceEquals(_appliedResult, Result))
+        {
+            return;
+        }
+
+        _appliedResult = Result;
+        _store!.Clear();
+
+        if (Result is { Succeeded: false })
+        {
+            object model = EditContext.Model;
+
+            foreach ((string key, string[] messages) in Result.ValidationErrors)
+            {
+                string? property = model.GetType()
+                    .GetProperties()
+                    .Select(item => item.Name)
+                    .FirstOrDefault(name => string.Equals(
+                        name,
+                        key.TrimStart('$', '.'),
+                        StringComparison.OrdinalIgnoreCase));
+
+                if (property is not null)
+                {
+                    _store.Add(new FieldIdentifier(model, property), messages);
+                }
+            }
+        }
+
+        EditContext.NotifyValidationStateChanged();
+    }
+
+    private void OnFieldChanged(object? sender, FieldChangedEventArgs args)
+    {
+        _store?.Clear(args.FieldIdentifier);
+    }
+
+    private void OnValidationRequested(object? sender, ValidationRequestedEventArgs args)
+    {
+        _store?.Clear();
+    }
+
+    private void Unsubscribe()
+    {
+        if (_subscribedContext is not null)
+        {
+            _subscribedContext.OnFieldChanged -= OnFieldChanged;
+            _subscribedContext.OnValidationRequested -= OnValidationRequested;
+        }
+    }
+
+    public void Dispose() => Unsubscribe();
+}

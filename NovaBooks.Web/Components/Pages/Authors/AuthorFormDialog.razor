@@ -1,0 +1,141 @@
+@using NovaBooks.Application.DTOs.Authors
+@inject AuthorsApi AuthorsApi
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmit" id="author-form">
+            <DataAnnotationsValidator />
+            <ServerValidator Result="_saveResult" />
+            <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+            <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+            <div class="form-section">
+                <div class="form-section__title">Nombre</div>
+                <div class="form-grid">
+                    <MudTextField @bind-Value="_model.FirstName" For="@(() => _model.FirstName)" Label="Primer nombre *"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  MaxLength="100" />
+                    <MudTextField @bind-Value="_model.MiddleName" For="@(() => _model.MiddleName)" Label="Segundo nombre"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
+                    <MudTextField @bind-Value="_model.LastName" For="@(() => _model.LastName)" Label="Primer apellido *"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
+                    <MudTextField @bind-Value="_model.SecondLastName" For="@(() => _model.SecondLastName)" Label="Segundo apellido"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
+                    <MudTextField @bind-Value="_model.Pseudonym" For="@(() => _model.Pseudonym)" Label="Seudónimo"
+                                  HelperText="Si lo tiene, se mostrará en lugar del nombre."
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150" />
+                </div>
+            </div>
+
+            <div class="form-section">
+                <div class="form-section__title">Datos biográficos</div>
+                <div class="form-grid">
+                    <MudDatePicker @bind-Date="BirthDate" Label="Fecha de nacimiento" Editable="true"
+                                   DateFormat="dd/MM/yyyy" MaxDate="DateTime.Today"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudDatePicker @bind-Date="DeathDate" Label="Fecha de fallecimiento" Editable="true"
+                                   DateFormat="dd/MM/yyyy" MaxDate="DateTime.Today"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </div>
+                <ValidationMessage For="@(() => _model.DeathDate)" class="field-error" />
+                <MudTextField @bind-Value="_model.Biography" For="@(() => _model.Biography)" Label="Biografía"
+                              Lines="4" Counter="4000" MaxLength="4000" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Class="mt-3" />
+            </div>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit"
+                   form="author-form" Disabled="_saving">
+            @if (_saving)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Guardar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Autor a editar; null para crear.</summary>
+    [Parameter]
+    public AuthorResponse? Author { get; set; }
+
+    private SaveAuthorRequest _model = new();
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    private DateTime? BirthDate
+    {
+        get => _model.BirthDate?.ToDateTime(TimeOnly.MinValue);
+        set => _model.BirthDate = value is null ? null : DateOnly.FromDateTime(value.Value);
+    }
+
+    private DateTime? DeathDate
+    {
+        get => _model.DeathDate?.ToDateTime(TimeOnly.MinValue);
+        set => _model.DeathDate = value is null ? null : DateOnly.FromDateTime(value.Value);
+    }
+
+    protected override void OnInitialized()
+    {
+        if (Author is not null)
+        {
+            _model = new SaveAuthorRequest
+            {
+                FirstName = Author.FirstName,
+                MiddleName = Author.MiddleName,
+                LastName = Author.LastName,
+                SecondLastName = Author.SecondLastName,
+                Pseudonym = Author.Pseudonym,
+                BirthDate = Author.BirthDate,
+                DeathDate = Author.DeathDate,
+                Biography = Author.Biography
+            };
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<AuthorResponse> result = Author is null
+                ? await AuthorsApi.CreateAsync(_model)
+                : await AuthorsApi.UpdateAsync(Author.Id, _model);
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() => Dialog.Cancel();
+
+    private void OnInvalidSubmit()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+    }
+}

@@ -1,0 +1,265 @@
+@page "/clientes"
+@attribute [RequirePermission(AppPermissions.CustomersView)]
+@implements IDisposable
+@using NovaBooks.Application.Common
+@using NovaBooks.Application.DTOs.Customers
+@inject CustomersApi CustomersApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Clientes | NovaBooks</PageTitle>
+
+<PageHeader Title="Clientes"
+            Description="Gestione la información de sus clientes: identificación, contacto y crédito."
+            Breadcrumbs="_breadcrumbs" />
+
+<div class="stat-grid">
+    <StatCard Tint="peach" Icon="@Icons.Material.Outlined.Groups" Label="Clientes activos"
+              Loading="_activeCount is null && _countError is null" Value="@_activeCount?.ToString("N0")" Error="@_countError" />
+    <StatCard Tint="mint" Icon="@Icons.Material.Outlined.Business" Label="Personas jurídicas activas"
+              Loading="_legalCount is null && _countError is null" Value="@_legalCount?.ToString("N0")" Error="@_countError" />
+    <StatCard Tint="sky" Icon="@Icons.Material.Outlined.PersonOff" Label="Clientes inactivos"
+              Loading="_inactiveCount is null && _countError is null" Value="@_inactiveCount?.ToString("N0")" Error="@_countError" />
+</div>
+
+<Panel Title="Clientes" Subtitle="Busque por código, nombre, NIT, identificación, correo o teléfono." Icon="@Icons.Material.Outlined.Groups">
+    <Actions>
+        @if (Session.HasPermission(AppPermissions.CustomersCreate))
+        {
+            <MudButton Href="/clientes/nuevo" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PersonAdd">
+                Nuevo cliente
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_search"
+                      Placeholder="Buscar por código, nombre, NIT, identificación, correo o teléfono"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="SearchAsync"
+                      OnClearButtonClick="ClearSearchAsync"
+                      aria-label="Buscar clientes" Class="list-toolbar__search" />
+
+        <MudSelect T="string" Value="_personType" ValueChanged="PersonTypeChangedAsync" Label="Tipo"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem T="string" Value="@string.Empty">Todos</MudSelectItem>
+            <MudSelectItem T="string" Value="@("NATURAL")">Persona natural</MudSelectItem>
+            <MudSelectItem T="string" Value="@("JURIDICA")">Persona jurídica</MudSelectItem>
+        </MudSelect>
+
+        <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem Value="StatusFilter.Active">Activos</MudSelectItem>
+            <MudSelectItem Value="StatusFilter.Inactive">Inactivos</MudSelectItem>
+            <MudSelectItem Value="StatusFilter.All">Todos</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    @if (_loading && _page is null)
+    {
+        <LoadingState />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar los clientes" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is { Items.Count: 0 })
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.Badge" Title="No se encontraron clientes"
+                    Message="@(HasFilters ? "Ajuste la búsqueda o los filtros." : "Registre el primer cliente con el botón Nuevo cliente.")" />
+    }
+    else if (_page is not null)
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading"
+                      Breakpoint="Breakpoint.None" Class="nb-table">
+                <HeaderContent>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>NIT</MudTh>
+                    <MudTh>Teléfono</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh Class="nb-table__actions">Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <EntityCell Title="@context.DisplayName"
+                                    Subtitle="@($"{context.Code} · {(context.PersonType == "JURIDICA" ? "Persona jurídica" : "Persona natural")}")"
+                                    Icon="@(context.PersonType == "JURIDICA" ? Icons.Material.Outlined.Business : null)"
+                                    Muted="!context.IsActive" />
+                    </MudTd>
+                    <MudTd Class="cell-nowrap">@(context.Nit ?? "CF")</MudTd>
+                    <MudTd Class="cell-nowrap">@(context.Phone ?? "—")</MudTd>
+                    <MudTd><StatusChip IsActive="context.IsActive" /></MudTd>
+                    <MudTd Class="nb-table__actions">
+
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                     aria-label="@($"Más acciones para {context.DisplayName}")">
+                                <MudMenuItem Icon="@(CanEdit ? Icons.Material.Outlined.Edit : Icons.Material.Outlined.Visibility)"
+                                             Href="@($"/clientes/{context.Id}")">
+                                    @(CanEdit ? "Editar" : "Ver ficha")
+                                </MudMenuItem>
+                                @if (Session.HasPermission(AppPermissions.CustomersDisable))
+                                {
+                                    <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                 OnClick="() => ToggleStatusAsync(context)">
+                                        @(context.IsActive ? "Desactivar" : "Reactivar")
+                                    </MudMenuItem>
+                                }
+                            </MudMenu>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                   TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+    </ChildContent>
+</Panel>
+
+@code {
+    private const int PageSize = 10;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Personas", null, disabled: true),
+        new("Clientes", null, disabled: true)
+    ];
+
+    private PagedResponse<CustomerListItemResponse>? _page;
+    private string? _search;
+    private string _personType = string.Empty;
+    private StatusFilter _status = StatusFilter.Active;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    private bool CanEdit => Session.HasPermission(AppPermissions.CustomersUpdate);
+
+    private bool HasFilters =>
+        !string.IsNullOrWhiteSpace(_search) || _personType.Length > 0 || _status != StatusFilter.Active;
+
+    private int? _activeCount;
+    private int? _legalCount;
+    private int? _inactiveCount;
+    private string? _countError;
+
+    protected override Task OnInitializedAsync() => Task.WhenAll(LoadAsync(), LoadCountsAsync());
+
+    private async Task LoadCountsAsync()
+    {
+        var active = CustomersApi.GetPagedAsync(null, StatusFilter.Active, null, 1, 1);
+        var legal = CustomersApi.GetPagedAsync(null, StatusFilter.Active, "JURIDICA", 1, 1);
+        var inactive = CustomersApi.GetPagedAsync(null, StatusFilter.Inactive, null, 1, 1);
+        await Task.WhenAll(active, legal, inactive);
+
+        _countError = active.Result.Succeeded ? null : active.Result.Message;
+        _activeCount = active.Result.Data?.TotalItems;
+        _legalCount = legal.Result.Data?.TotalItems;
+        _inactiveCount = inactive.Result.Data?.TotalItems;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<CustomerListItemResponse>> result =
+            await CustomersApi.GetPagedAsync(_search, _status, _personType, _pageNumber, PageSize, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private Task SearchAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PersonTypeChangedAsync(string value)
+    {
+        _personType = value;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    private async Task ToggleStatusAsync(CustomerListItemResponse customer)
+    {
+        bool activate = !customer.IsActive;
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Reactivar cliente" : "Desactivar cliente",
+            activate
+                ? $"¿Desea reactivar a {customer.DisplayName}?"
+                : $"¿Desea desactivar a {customer.DisplayName}? Se conservará su historial y podrá reactivarlo después.",
+            activate ? "Reactivar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<CustomerResponse> result = await CustomersApi.ChangeStatusAsync(customer.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Cliente {customer.DisplayName} {(activate ? "reactivado" : "desactivado")}.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadCountsAsync());
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

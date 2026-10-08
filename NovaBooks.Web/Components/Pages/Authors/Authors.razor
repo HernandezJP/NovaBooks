@@ -1,0 +1,276 @@
+@page "/autores"
+@attribute [RequirePermission(AppPermissions.CatalogView)]
+@implements IDisposable
+@using NovaBooks.Application.Common
+@using NovaBooks.Application.DTOs.Authors
+@inject AuthorsApi AuthorsApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Autores | NovaBooks</PageTitle>
+
+<PageHeader Title="Autores"
+            Description="Autores disponibles para asociar a los libros del catálogo."
+            Breadcrumbs="_breadcrumbs" />
+
+<div class="stat-grid">
+    <StatCard Tint="sky" Icon="@Icons.Material.Outlined.HistoryEdu" Label="Autores activos"
+              Loading="_activeCount is null && _countError is null" Value="@_activeCount?.ToString("N0")" Error="@_countError" />
+    <StatCard Tint="sand" Icon="@Icons.Material.Outlined.PersonOff" Label="Autores inactivos"
+              Loading="_inactiveCount is null && _countError is null" Value="@_inactiveCount?.ToString("N0")" Error="@_countError" />
+</div>
+
+<Panel Title="Autores" Subtitle="Busque por nombre, apellido o seudónimo." Icon="@Icons.Material.Outlined.HistoryEdu">
+    <Actions>
+        @if (Session.HasPermission(AppPermissions.CatalogCreate))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="CreateAsync">
+                Nuevo autor
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_search"
+                      Placeholder="Buscar por nombre, apellido o seudónimo"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="SearchAsync"
+                      OnClearButtonClick="ClearSearchAsync"
+                      aria-label="Buscar autores" Class="list-toolbar__search" />
+
+        <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem Value="StatusFilter.Active">Activos</MudSelectItem>
+            <MudSelectItem Value="StatusFilter.Inactive">Inactivos</MudSelectItem>
+            <MudSelectItem Value="StatusFilter.All">Todos</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    @if (_loading && _page is null)
+    {
+        <LoadingState />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar los autores" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is { Items.Count: 0 })
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.HistoryEdu" Title="No se encontraron autores"
+                    Message="@(string.IsNullOrWhiteSpace(_search) ? "Registre el primer autor con el botón Nuevo autor." : "Pruebe con otro término de búsqueda.")" />
+    }
+    else if (_page is not null)
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading"
+                      Breakpoint="Breakpoint.None" Class="nb-table">
+                <HeaderContent>
+                    <MudTh>Autor</MudTh>
+                    <MudTh>Vida</MudTh>
+                    <MudTh Class="text-right">Libros</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh Class="nb-table__actions">Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <EntityCell Title="@context.DisplayName"
+                                    Subtitle="@(context.Pseudonym is null ? null : $"{context.FirstName} {context.LastName}")"
+                                    Muted="!context.IsActive" />
+                    </MudTd>
+                    <MudTd>@Lifespan(context)</MudTd>
+                    <MudTd Class="text-right">@context.BooksCount</MudTd>
+                    <MudTd><StatusChip IsActive="context.IsActive" /></MudTd>
+                    <MudTd Class="nb-table__actions">
+                        @if (Session.HasAnyPermission(AppPermissions.CatalogUpdate, AppPermissions.CatalogDisable))
+                        {
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                     aria-label="@($"Más acciones para {context.DisplayName}")">
+                                @if (Session.HasPermission(AppPermissions.CatalogUpdate))
+                                {
+                                    <MudMenuItem Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(context)">Editar</MudMenuItem>
+                                }
+                                @if (Session.HasPermission(AppPermissions.CatalogDisable))
+                                {
+                                    <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                 OnClick="() => ToggleStatusAsync(context)">
+                                        @(context.IsActive ? "Desactivar" : "Reactivar")
+                                    </MudMenuItem>
+                                }
+                            </MudMenu>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                   TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+    </ChildContent>
+</Panel>
+
+@code {
+    private const int PageSize = 10;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Catálogo", null, disabled: true),
+        new("Autores", null, disabled: true)
+    ];
+
+    private PagedResponse<AuthorResponse>? _page;
+    private string? _search;
+    private StatusFilter _status = StatusFilter.Active;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    private int? _activeCount;
+    private int? _inactiveCount;
+    private string? _countError;
+
+    protected override Task OnInitializedAsync() => Task.WhenAll(LoadAsync(), LoadCountsAsync());
+
+    private async Task LoadCountsAsync()
+    {
+        var active = AuthorsApi.GetPagedAsync(null, StatusFilter.Active, 1, 1);
+        var inactive = AuthorsApi.GetPagedAsync(null, StatusFilter.Inactive, 1, 1);
+        await Task.WhenAll(active, inactive);
+
+        _countError = active.Result.Succeeded ? null : active.Result.Message;
+        _activeCount = active.Result.Data?.TotalItems;
+        _inactiveCount = inactive.Result.Data?.TotalItems;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<AuthorResponse>> result =
+            await AuthorsApi.GetPagedAsync(_search, _status, _pageNumber, PageSize, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private Task SearchAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    private static string Lifespan(AuthorResponse author) =>
+        (author.BirthDate, author.DeathDate) switch
+        {
+            (null, null) => "—",
+            ({ } birth, null) => $"Nació en {birth.Year}",
+            (null, { } death) => $"Falleció en {death.Year}",
+            ({ } birth, { } death) => $"{birth.Year} – {death.Year}"
+        };
+
+    private async Task CreateAsync()
+    {
+        AuthorResponse? author = await Dialogs.ShowFormAsync<AuthorFormDialog, AuthorResponse>(
+            "Nuevo autor", new DialogParameters<AuthorFormDialog>(), DialogExtensions.WideFormOptions);
+
+        if (author is not null)
+        {
+            Snackbar.Add($"Autor {author.DisplayName} registrado.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadCountsAsync());
+        }
+    }
+
+    private async Task EditAsync(AuthorResponse author)
+    {
+        AuthorResponse? updated = await Dialogs.ShowFormAsync<AuthorFormDialog, AuthorResponse>(
+            "Editar autor",
+            new DialogParameters<AuthorFormDialog> { { dialog => dialog.Author, author } },
+            DialogExtensions.WideFormOptions);
+
+        if (updated is not null)
+        {
+            Snackbar.Add($"Autor {updated.DisplayName} actualizado.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task ToggleStatusAsync(AuthorResponse author)
+    {
+        bool activate = !author.IsActive;
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Reactivar autor" : "Desactivar autor",
+            activate
+                ? $"¿Desea reactivar a {author.DisplayName}?"
+                : $"¿Desea desactivar a {author.DisplayName}? Los libros que ya lo tienen lo conservan, pero no podrá asignarse a libros nuevos.",
+            activate ? "Reactivar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<AuthorResponse> result = await AuthorsApi.ChangeStatusAsync(author.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Autor {author.DisplayName} {(activate ? "reactivado" : "desactivado")}.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadCountsAsync());
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

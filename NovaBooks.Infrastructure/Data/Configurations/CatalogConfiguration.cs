@@ -323,6 +323,10 @@ public static class CatalogConfiguration
             builder.Property(x => x.LIB_RutaImagen)
                 .HasMaxLength(1000);
 
+            builder.Property(x => x.LIB_CostoReferencia)
+                .HasPrecision(18, 2)
+                .HasDefaultValue(0m);
+
             builder.Property(x => x.LIB_PermiteVenta)
                 .HasDefaultValue(true);
 
@@ -388,6 +392,10 @@ public static class CatalogConfiguration
                     "CK_PB_LIBRO_NUMERO_PAGINAS",
                     "[LIB_NumeroPaginas] IS NULL OR " +
                     "[LIB_NumeroPaginas] > 0");
+
+                tableBuilder.HasCheckConstraint(
+                    "CK_PB_LIBRO_COSTO_REFERENCIA",
+                    "[LIB_CostoReferencia] >= 0");
 
                 tableBuilder.HasCheckConstraint(
                     "CK_PB_LIBRO_DIMENSIONES",

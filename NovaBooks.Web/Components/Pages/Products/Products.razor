@@ -1,0 +1,408 @@
+@page "/productos"
+@attribute [RequirePermission(AppPermissions.CatalogView)]
+@implements IDisposable
+@using NovaBooks.Application.Common
+@using NovaBooks.Application.DTOs.Common
+@using NovaBooks.Application.DTOs.Products
+@inject ProductsApi ProductsApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Libros | NovaBooks</PageTitle>
+
+<PageHeader Title="Libros y catálogo"
+            Description="Gestione los títulos de su librería: identificación, autores, categorías y precios."
+            Breadcrumbs="_breadcrumbs" />
+
+<div class="stat-grid">
+    <StatCard Tint="peach" Icon="@Icons.Material.Outlined.MenuBook" Label="Libros activos"
+              Loading="_activeCount is null && _countError is null" Value="@_activeCount?.ToString("N0")" Error="@_countError" />
+    <StatCard Tint="mint" Icon="@Icons.Material.Outlined.Folder" Label="Categorías"
+              Loading="_catalogs is null && _catalogsError is null" Value="@_catalogs?.Categories.Count.ToString("N0")" Error="@_catalogsError" />
+    <StatCard Tint="sky" Icon="@Icons.Material.Outlined.HistoryEdu" Label="Autores activos" Href="/autores"
+              Loading="_catalogs is null && _catalogsError is null" Value="@_catalogs?.Authors.Count.ToString("N0")" Error="@_catalogsError" />
+    <StatCard Tint="sand" Icon="@Icons.Material.Outlined.AccountBalance" Label="Editoriales"
+              Loading="_catalogs is null && _catalogsError is null" Value="@_catalogs?.Editorials.Count.ToString("N0")" Error="@_catalogsError" />
+</div>
+
+<div class="layout-split">
+    <Panel Title="Catálogo de libros" Subtitle="Seleccione un libro para ver su detalle." Icon="@Icons.Material.Outlined.AutoStories">
+    <Actions>
+        @if (Session.HasPermission(AppPermissions.CatalogCreate))
+        {
+            <MudButton Href="/productos/nuevo" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add">
+                Nuevo libro
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+        <div class="list-toolbar">
+            <MudTextField @bind-Value="_search"
+                          Placeholder="Buscar por título, autor, ISBN o categoría"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          DebounceInterval="400" OnDebounceIntervalElapsed="SearchAsync"
+                          OnClearButtonClick="ClearSearchAsync"
+                          aria-label="Buscar libros" Class="list-toolbar__search" />
+
+            <MudSelect T="int?" Value="_categoryId" ValueChanged="CategoryChangedAsync" Label="Categoría"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Clearable="true"
+                       Class="list-toolbar__filter" Disabled="@(_catalogs is null)">
+                @foreach (CatalogOptionResponse category in _catalogs?.Categories ?? [])
+                {
+                    <MudSelectItem T="int?" Value="category.Id">@category.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                <MudSelectItem Value="StatusFilter.Active">Activos</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.Inactive">Inactivos</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.All">Todos los libros</MudSelectItem>
+            </MudSelect>
+        </div>
+
+        @if (_loading && _page is null)
+        {
+            <LoadingState />
+        }
+        else if (_error is not null)
+        {
+            <ErrorState Title="No fue posible cargar los libros" Message="@_error" OnRetry="LoadAsync" />
+        }
+        else if (_page is { Items.Count: 0 })
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.MenuBook" Title="No se encontraron libros"
+                        Message="@(HasFilters ? "Ajuste la búsqueda o los filtros." : "Registre el primer libro con el botón Nuevo libro.")" />
+        }
+        else if (_page is not null)
+        {
+            <div class="table-scroll">
+                <MudTable T="ProductListItemResponse" Items="_page.Items" Hover="true" Elevation="0" Loading="_loading"
+                          Breakpoint="Breakpoint.None" Class="nb-table nb-table--clickable"
+                          OnRowClick="args => Select(args.Item)" RowClassFunc="RowClass">
+                    <HeaderContent>
+                        <MudTh>Portada</MudTh>
+                        <MudTh>Libro</MudTh>
+                        <MudTh Class="col-optional">ISBN</MudTh>
+                        <MudTh Class="text-right">Precio</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh Class="nb-table__actions">Acciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <span class="cover-thumb @(context.IsActive ? "" : "cover-thumb--muted")" aria-hidden="true">
+                                @if (ProductsApi.ImageUrl(context.Id, context.ImageVersion) is { } thumbUrl)
+                                {
+                                    <img src="@thumbUrl" alt="" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@Icons.Material.Outlined.MenuBook" Size="Size.Small" />
+                                }
+                            </span>
+                        </MudTd>
+                        <MudTd>
+                            <div class="cell-primary">@context.Title</div>
+                            <div class="cell-secondary">@(string.IsNullOrEmpty(context.Authors) ? "Sin autor" : context.Authors)</div>
+                            <div class="cell-secondary cell-nowrap">@context.Code</div>
+                        </MudTd>
+                        <MudTd Class="money col-optional">@(context.Isbn13 ?? context.Isbn10 ?? "—")</MudTd>
+                        <MudTd Class="text-right money">@Money(context.Price)</MudTd>
+                        <MudTd>
+                            <StatusChip IsActive="context.IsActive" />
+                            @if (context.IsActive && !context.AllowsSale)
+                            {
+                                <span class="status-pill status-pill--warning ml-1">No a la venta</span>
+                            }
+                        </MudTd>
+                        <MudTd Class="nb-table__actions">
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                     aria-label="@($"Acciones para {context.Title}")">
+                                <MudMenuItem Icon="@(CanEdit ? Icons.Material.Outlined.Edit : Icons.Material.Outlined.Visibility)"
+                                             Href="@($"/productos/{context.Id}")">
+                                    @(CanEdit ? "Editar" : "Ver ficha")
+                                </MudMenuItem>
+                                @if (Session.HasPermission(AppPermissions.CatalogDisable))
+                                {
+                                    <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                 OnClick="() => ToggleStatusAsync(context)">
+                                        @(context.IsActive ? "Desactivar" : "Reactivar")
+                                    </MudMenuItem>
+                                }
+                            </MudMenu>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+
+            <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                       TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+        }
+        </ChildContent>
+</Panel>
+
+    <Panel Title="Detalle del libro" Icon="@Icons.Material.Outlined.Info">
+        @if (_selected is null)
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.TouchApp" Title="Ningún libro seleccionado"
+                        Message="Haga clic en un libro del catálogo para ver su información." />
+        }
+        else
+        {
+            <div class="book-detail__top">
+                <div class="book-detail__cover">
+                    @if (ProductsApi.ImageUrl(_selected.Id, _selected.ImageVersion) is { } imageUrl)
+                    {
+                        <img src="@imageUrl" alt="@($"Portada de {_selected.Title}")" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Outlined.MenuBook" Size="Size.Large" />
+                    }
+                </div>
+                <div>
+                    <h3 class="book-detail__title">@_selected.Title</h3>
+                    @if (!string.IsNullOrEmpty(_selected.Authors))
+                    {
+                        <p class="book-detail__author">@_selected.Authors</p>
+                    }
+                    @if (!string.IsNullOrEmpty(_selected.Subtitle))
+                    {
+                        <p class="cell-secondary mt-1">@_selected.Subtitle</p>
+                    }
+                </div>
+            </div>
+
+            <dl class="detail-list">
+                <dt>Código</dt>
+                <dd>@_selected.Code</dd>
+                <dt>Categoría</dt>
+                <dd>@(_selected.PrimaryCategory ?? "Sin categoría")</dd>
+                <dt>Formato</dt>
+                <dd>@_selected.Format</dd>
+                <dt>ISBN</dt>
+                <dd>@(_selected.Isbn13 ?? _selected.Isbn10 ?? "—")</dd>
+                <dt>Precio</dt>
+                <dd class="detail-list__price">@Money(_selected.Price)</dd>
+                @if (CanSeeCosts)
+                {
+                    <dt>Costo de referencia</dt>
+                    <dd>@Money(_selected.ReferenceCost)</dd>
+                }
+                <dt>Estado</dt>
+                <dd><StatusChip IsActive="_selected.IsActive" /></dd>
+            </dl>
+
+            <MudButton Href="@($"/productos/{_selected.Id}")" Variant="Variant.Filled" Color="Color.Primary"
+                       FullWidth="true" Class="mt-4"
+                       StartIcon="@(CanEdit ? Icons.Material.Outlined.Edit : Icons.Material.Outlined.Visibility)">
+                @(CanEdit ? "Editar libro" : "Ver ficha completa")
+            </MudButton>
+        }
+    </Panel>
+</div>
+
+@code {
+    private const int PageSize = 10;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Catálogo", null, disabled: true),
+        new("Libros", null, disabled: true)
+    ];
+
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? InitialSearch { get; set; }
+
+    private PagedResponse<ProductListItemResponse>? _page;
+    private ProductCatalogsResponse? _catalogs;
+    private ProductListItemResponse? _selected;
+    private string? _catalogsError;
+    private int? _activeCount;
+    private string? _countError;
+    private string? _search;
+    private int? _categoryId;
+    private StatusFilter _status = StatusFilter.Active;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private string? _appliedQuery;
+    private CancellationTokenSource? _loadCancellation;
+
+    private bool CanEdit => Session.HasPermission(AppPermissions.CatalogUpdate);
+
+    private bool CanSeeCosts => Session.HasPermission(AppPermissions.CatalogManagePrices);
+
+    private bool HasFilters =>
+        !string.IsNullOrWhiteSpace(_search) || _categoryId is not null || _status != StatusFilter.Active;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _search = InitialSearch;
+        _appliedQuery = InitialSearch;
+
+        // Lista, catálogos e indicador se cargan en paralelo con estados propios.
+        await Task.WhenAll(LoadAsync(), LoadCatalogsAsync(), LoadActiveCountAsync());
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Búsqueda global desde la barra superior estando ya en esta página.
+        if (_appliedQuery != InitialSearch && _page is not null)
+        {
+            _appliedQuery = InitialSearch;
+            _search = InitialSearch;
+            _pageNumber = 1;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadCatalogsAsync()
+    {
+        _catalogsError = null;
+
+        ApiResult<ProductCatalogsResponse> result = await ProductsApi.GetCatalogsAsync();
+
+        if (result.Succeeded)
+        {
+            _catalogs = result.Data;
+        }
+        else
+        {
+            _catalogsError = result.Message;
+        }
+    }
+
+    private async Task LoadActiveCountAsync()
+    {
+        ApiResult<PagedResponse<ProductListItemResponse>> result =
+            await ProductsApi.GetPagedAsync(null, StatusFilter.Active, null, 1, 1);
+
+        if (result.Succeeded)
+        {
+            _activeCount = result.Data!.TotalItems;
+            _countError = null;
+        }
+        else
+        {
+            _countError = result.Message;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<ProductListItemResponse>> result =
+            await ProductsApi.GetPagedAsync(_search, _status, _categoryId, _pageNumber, PageSize, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+            _selected = _page?.Items.FirstOrDefault(item => item.Id == _selected?.Id) ?? _page?.Items.FirstOrDefault();
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private void Select(ProductListItemResponse? product)
+    {
+        if (product is not null)
+        {
+            _selected = product;
+        }
+    }
+
+    private string RowClass(ProductListItemResponse product, int index) =>
+        product.Id == _selected?.Id ? "nb-table__row--selected" : string.Empty;
+
+    private static string Money(decimal? value) => value is null ? "—" : $"Q {value:N2}";
+
+    private Task SearchAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task CategoryChangedAsync(int? categoryId)
+    {
+        _categoryId = categoryId;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    private async Task ToggleStatusAsync(ProductListItemResponse product)
+    {
+        bool activate = !product.IsActive;
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Reactivar libro" : "Desactivar libro",
+            activate
+                ? $"¿Desea reactivar \"{product.Title}\"?"
+                : $"¿Desea desactivar \"{product.Title}\"? Se conservan su historial de precios y movimientos.",
+            activate ? "Reactivar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<ProductResponse> result = await ProductsApi.ChangeStatusAsync(product.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Libro {product.Code} {(activate ? "reactivado" : "desactivado")}.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadActiveCountAsync());
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

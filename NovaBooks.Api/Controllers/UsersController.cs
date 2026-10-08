@@ -1,6 +1,7 @@
-﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using NovaBooks.Api.Common;
 using NovaBooks.Application.Common;
+using NovaBooks.Application.DTOs.Roles;
 using NovaBooks.Application.DTOs.Users;
 using NovaBooks.Application.Interfaces;
 using NovaBooks.Infrastructure.Security.Permissions;
@@ -19,7 +20,7 @@ public sealed class UsersController : ControllerBase
         _userService = userService;
     }
 
-    [HasPermission("Usuarios.Ver")]
+    [HasPermission(UserPermissions.View)]
     [HttpGet]
     [ProducesResponseType(
         typeof(PagedResponse<UserResponse>),
@@ -27,6 +28,7 @@ public sealed class UsersController : ControllerBase
     public async Task<
         ActionResult<PagedResponse<UserResponse>>> GetPaged(
             [FromQuery] string? search = null,
+            [FromQuery] bool? isActive = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             CancellationToken cancellationToken = default)
@@ -34,6 +36,7 @@ public sealed class UsersController : ControllerBase
         PagedResponse<UserResponse> response =
             await _userService.GetPagedAsync(
                 search,
+                isActive,
                 page,
                 pageSize,
                 cancellationToken);
@@ -41,12 +44,13 @@ public sealed class UsersController : ControllerBase
         return Ok(response);
     }
 
-    [HasPermission("Usuarios.Ver")]
+    [HasPermission(UserPermissions.View)]
     [HttpGet("{id:int}")]
     [ProducesResponseType(
         typeof(UserResponse),
         StatusCodes.Status200OK)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status404NotFound)]
     public async Task<ActionResult<UserResponse>> GetById(
         int id,
@@ -59,38 +63,65 @@ public sealed class UsersController : ControllerBase
 
         if (user is null)
         {
-            return NotFound(new
-            {
-                message =
-                    "El usuario solicitado no existe."
-            });
+            return this.NotFoundProblem(
+                "El usuario solicitado no existe.");
         }
 
         return Ok(user);
     }
 
-    [HasPermission("Usuarios.Crear")]
+    [HasAnyPermission(
+        UserPermissions.View,
+        UserPermissions.Create,
+        UserPermissions.AssignRoles)]
+    [HttpGet("catalogos/roles")]
+    [ProducesResponseType(
+        typeof(IReadOnlyCollection<RoleOptionResponse>),
+        StatusCodes.Status200OK)]
+    public async Task<
+        ActionResult<IReadOnlyCollection<RoleOptionResponse>>>
+        GetAssignableRoles(
+            CancellationToken cancellationToken)
+    {
+        return Ok(await _userService.GetAssignableRolesAsync(
+            cancellationToken));
+    }
+
+    [HasPermission(UserPermissions.Create)]
     [HttpPost]
     [ProducesResponseType(
         typeof(UserResponse),
         StatusCodes.Status201Created)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status409Conflict)]
     public async Task<ActionResult<UserResponse>> Create(
         [FromBody] CreateUserRequest request,
         CancellationToken cancellationToken)
     {
-        UserOperationResult<UserResponse> result =
+        if (request.Roles.Any(role => !string.IsNullOrWhiteSpace(role)) &&
+            !this.HasPermission(UserPermissions.AssignRoles))
+        {
+            return this.ForbiddenProblem(
+                "Se requiere el permiso Usuarios.AsignarRoles " +
+                "para crear usuarios con roles.");
+        }
+
+        OperationResult<UserResponse> result =
             await _userService.CreateAsync(
                 request,
+                this.GetAuthenticatedUserId(),
                 cancellationToken);
 
         if (!result.Succeeded)
         {
-            return BadRequest(new
-            {
-                errors = result.Errors
-            });
+            return this.OperationProblem(result);
         }
 
         return CreatedAtAction(
@@ -102,153 +133,116 @@ public sealed class UsersController : ControllerBase
             result.Data);
     }
 
-    [HasPermission("Usuarios.Modificar")]
+    [HasPermission(UserPermissions.Update)]
     [HttpPut("{id:int}")]
     [ProducesResponseType(
         typeof(UserResponse),
         StatusCodes.Status200OK)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status400BadRequest)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status404NotFound)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status409Conflict)]
     public async Task<ActionResult<UserResponse>> Update(
         int id,
         [FromBody] UpdateUserRequest request,
         CancellationToken cancellationToken)
     {
-        UserOperationResult<UserResponse> result =
+        return FromResult(
             await _userService.UpdateAsync(
                 id,
                 request,
-                cancellationToken);
-
-        return FromResult(result);
+                this.GetAuthenticatedUserId(),
+                cancellationToken));
     }
 
-    [HasPermission("Usuarios.Desactivar")]
+    [HasPermission(UserPermissions.Disable)]
     [HttpPatch("{id:int}/estado")]
     [ProducesResponseType(
         typeof(UserResponse),
         StatusCodes.Status200OK)]
     [ProducesResponseType(
-        StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status404NotFound)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status409Conflict)]
     public async Task<ActionResult<UserResponse>> ChangeStatus(
         int id,
         [FromBody] ChangeUserStatusRequest request,
         CancellationToken cancellationToken)
     {
-        if (!TryGetAuthenticatedUserId(
-                out int authenticatedUserId))
-        {
-            return Unauthorized(new
-            {
-                message =
-                    "No fue posible identificar al usuario autenticado."
-            });
-        }
-
-        UserOperationResult<UserResponse> result =
+        return FromResult(
             await _userService.ChangeStatusAsync(
                 id,
                 request.IsActive,
-                authenticatedUserId,
-                cancellationToken);
-
-        return FromResult(result);
+                this.GetAuthenticatedUserId(),
+                cancellationToken));
     }
 
-    [HasPermission("Usuarios.AsignarRoles")]
+    [HasPermission(UserPermissions.AssignRoles)]
     [HttpPut("{id:int}/roles")]
     [ProducesResponseType(
         typeof(UserResponse),
         StatusCodes.Status200OK)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status400BadRequest)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status404NotFound)]
+    [ProducesResponseType(
+        typeof(ProblemDetails),
+        StatusCodes.Status409Conflict)]
     public async Task<ActionResult<UserResponse>> AssignRoles(
         int id,
         [FromBody] AssignUserRolesRequest request,
         CancellationToken cancellationToken)
     {
-        UserOperationResult<UserResponse> result =
+        return FromResult(
             await _userService.AssignRolesAsync(
                 id,
                 request,
-                cancellationToken);
-
-        return FromResult(result);
+                this.GetAuthenticatedUserId(),
+                cancellationToken));
     }
 
-    [HasPermission("Usuarios.RestablecerPassword")]
+    [HasPermission(UserPermissions.ResetPassword)]
     [HttpPut("{id:int}/password")]
     [ProducesResponseType(
         StatusCodes.Status204NoContent)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status400BadRequest)]
     [ProducesResponseType(
+        typeof(ProblemDetails),
         StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ResetPassword(
         int id,
         [FromBody] ResetUserPasswordRequest request,
         CancellationToken cancellationToken)
     {
-        UserOperationResult<bool> result =
+        OperationResult<bool> result =
             await _userService.ResetPasswordAsync(
                 id,
                 request,
+                this.GetAuthenticatedUserId(),
                 cancellationToken);
 
-        if (result.NotFound)
-        {
-            return NotFound(new
-            {
-                errors = result.Errors
-            });
-        }
-
-        if (!result.Succeeded)
-        {
-            return BadRequest(new
-            {
-                errors = result.Errors
-            });
-        }
-
-        return NoContent();
+        return result.Succeeded
+            ? NoContent()
+            : this.OperationProblem(result);
     }
 
     private ActionResult<UserResponse> FromResult(
-        UserOperationResult<UserResponse> result)
+        OperationResult<UserResponse> result)
     {
-        if (result.NotFound)
-        {
-            return NotFound(new
-            {
-                errors = result.Errors
-            });
-        }
-
-        if (!result.Succeeded)
-        {
-            return BadRequest(new
-            {
-                errors = result.Errors
-            });
-        }
-
-        return Ok(result.Data);
-    }
-
-    private bool TryGetAuthenticatedUserId(
-        out int userId)
-    {
-        string? value =
-            User.FindFirstValue(
-                ClaimTypes.NameIdentifier);
-
-        return int.TryParse(value, out userId);
+        return result.Succeeded
+            ? Ok(result.Data)
+            : this.OperationProblem(result);
     }
 }

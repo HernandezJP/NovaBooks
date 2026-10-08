@@ -1,0 +1,451 @@
+@page "/usuarios"
+@attribute [RequirePermission(AppPermissions.UsersView)]
+@implements IDisposable
+@using NovaBooks.Application.Common
+@using NovaBooks.Application.DTOs.Users
+@inject UsersApi UsersApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject AuthService Auth
+@inject RolesApi RolesApi
+
+<PageTitle>Usuarios | NovaBooks</PageTitle>
+
+<PageHeader Title="Usuarios"
+            Description="Gestione las cuentas de acceso del personal y sus roles."
+            Breadcrumbs="_breadcrumbs" />
+
+<div class="stat-grid">
+    <StatCard Tint="peach" Icon="@Icons.Material.Outlined.People" Label="Usuarios activos"
+              Loading="_activeCount is null && _countError is null" Value="@_activeCount?.ToString("N0")" Error="@_countError" />
+    <StatCard Tint="mint" Icon="@Icons.Material.Outlined.PersonOff" Label="Usuarios inactivos"
+              Loading="_inactiveCount is null && _countError is null" Value="@_inactiveCount?.ToString("N0")" Error="@_countError" />
+    @if (Session.HasPermission(AppPermissions.RolesView))
+    {
+        <StatCard Tint="sky" Icon="@Icons.Material.Outlined.Shield" Label="Roles activos" Href="/roles"
+                  Loading="_roles is null && _rolesError is null" Value="@_roles?.Count(role => role.IsActive).ToString("N0")" Error="@_rolesError" />
+    }
+</div>
+
+<div class="layout-stack">
+<Panel Title="Usuarios" Subtitle="Busque por usuario, correo o teléfono." Icon="@Icons.Material.Outlined.People">
+    <Actions>
+        @if (Session.HasPermission(AppPermissions.UsersCreate))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd"
+                       OnClick="CreateAsync">
+                Nuevo usuario
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_search"
+                      Placeholder="Buscar por usuario, correo o teléfono"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Clearable="true"
+                      DebounceInterval="400"
+                      OnDebounceIntervalElapsed="SearchAsync"
+                      OnClearButtonClick="ClearSearchAsync"
+                      aria-label="Buscar usuarios"
+                      Class="list-toolbar__search" />
+
+        <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                   Label="Estado" Class="list-toolbar__filter">
+            <MudSelectItem Value="StatusFilter.Active">Activos</MudSelectItem>
+            <MudSelectItem Value="StatusFilter.Inactive">Inactivos</MudSelectItem>
+            <MudSelectItem Value="StatusFilter.All">Todos</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    @if (_loading && _page is null)
+    {
+        <LoadingState />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar los usuarios" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is { Items.Count: 0 })
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.PersonSearch"
+                    Title="No se encontraron usuarios"
+                    Message="@(string.IsNullOrWhiteSpace(_search) ? "No hay usuarios con el estado seleccionado." : "Pruebe con otro término de búsqueda.")" />
+    }
+    else if (_page is not null)
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading"
+                      Breakpoint="Breakpoint.None" Class="nb-table">
+                <HeaderContent>
+                    <MudTh>Usuario</MudTh>
+                    <MudTh Class="col-optional">Teléfono</MudTh>
+                    <MudTh>Roles</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh Class="nb-table__actions">Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <EntityCell Title="@context.UserName" Subtitle="@context.Email" Muted="!context.IsActive" />
+                    </MudTd>
+                    <MudTd Class="col-optional cell-nowrap">@(context.PhoneNumber ?? "—")</MudTd>
+                    <MudTd>
+                        @if (context.Roles.Count == 0)
+                        {
+                            <span class="cell-secondary">Sin roles</span>
+                        }
+                        @foreach (string role in context.Roles)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary">@role</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        <StatusChip IsActive="context.IsActive" />
+                        @if (context.IsLockedOut)
+                        {
+                            <MudTooltip Text="@($"Bloqueado por intentos fallidos hasta {context.LockoutEnd?.LocalDateTime:g}")">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning"
+                                         Icon="@Icons.Material.Outlined.LockClock">Bloqueado</MudChip>
+                            </MudTooltip>
+                        }
+                    </MudTd>
+                    <MudTd Class="nb-table__actions">
+                        @if (HasSecondaryActions)
+                        {
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                     aria-label="@($"Más acciones para {context.UserName}")">
+                                @if (Session.HasPermission(AppPermissions.UsersUpdate))
+                                {
+                                    <MudMenuItem Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(context)">Editar</MudMenuItem>
+                                }
+                                @if (Session.HasPermission(AppPermissions.UsersAssignRoles))
+                                {
+                                    <MudMenuItem Icon="@Icons.Material.Outlined.AdminPanelSettings"
+                                                 OnClick="() => AssignRolesAsync(context)">
+                                        Asignar roles
+                                    </MudMenuItem>
+                                }
+                                @if (Session.HasPermission(AppPermissions.UsersResetPassword))
+                                {
+                                    <MudMenuItem Icon="@Icons.Material.Outlined.Password"
+                                                 OnClick="() => ResetPasswordAsync(context)">
+                                        Restablecer contraseña
+                                    </MudMenuItem>
+                                }
+                                @if (Session.HasPermission(AppPermissions.UsersDisable))
+                                {
+                                    @if (IsSelf(context) && context.IsActive)
+                                    {
+                                        <MudMenuItem Icon="@Icons.Material.Outlined.Block" Disabled="true">
+                                            Desactivar (no puede desactivarse a sí mismo)
+                                        </MudMenuItem>
+                                    }
+                                    else
+                                    {
+                                        <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                     OnClick="() => ToggleStatusAsync(context)">
+                                            @(context.IsActive ? "Desactivar" : "Activar")
+                                        </MudMenuItem>
+                                    }
+                                }
+                            </MudMenu>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                   TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+    </ChildContent>
+</Panel>
+
+@if (Session.HasPermission(AppPermissions.RolesView))
+{
+    <Panel Title="Roles y permisos" Subtitle="Roles activos, sus usuarios y permisos. Haga clic en un rol para ver sus permisos." Icon="@Icons.Material.Outlined.Shield">
+        @if (_rolesError is not null)
+        {
+            <ErrorState Title="No fue posible cargar los roles" Message="@_rolesError" OnRetry="LoadRolesAsync" />
+        }
+        else if (_roles is null)
+        {
+            <LoadingState Rows="3" />
+        }
+        else
+        {
+            var activeRoles = _roles.Where(role => role.IsActive).ToList();
+            bool canOpenPermissions = Session.HasPermission(AppPermissions.RolesAssignPermissions);
+            string[] tints = ["peach", "mint", "sky", "sand"];
+
+            <ul class="role-cards">
+                @for (int index = 0; index < activeRoles.Count; index++)
+                {
+                    var role = activeRoles[index];
+                    string tint = tints[index % tints.Length];
+
+                    <li>
+                        <a class="role-card role-card--@tint @(canOpenPermissions ? "role-card--link" : "")"
+                           href="@(canOpenPermissions ? $"/permisos?rol={role.Id}" : null)"
+                           aria-label="@($"{role.Name}: {UsersLabel(role.UsersCount)}, {role.Permissions.Count} permisos")">
+                            <span class="role-card__icon" aria-hidden="true">
+                                <MudIcon Icon="@(role.IsProtected ? Icons.Material.Filled.Shield : Icons.Material.Outlined.Shield)" Size="Size.Small" />
+                            </span>
+                            <span class="role-card__body">
+                                <span class="role-card__name">@role.Name</span>
+                                <span class="role-card__description">@(role.Description ?? "Sin descripción")</span>
+                                <span class="role-card__meta">
+                                    <span><MudIcon Icon="@Icons.Material.Outlined.Person" Size="Size.Small" /> @UsersLabel(role.UsersCount)</span>
+                                    <span><MudIcon Icon="@Icons.Material.Outlined.Key" Size="Size.Small" /> @role.Permissions.Count permisos</span>
+                                </span>
+                            </span>
+                            @if (canOpenPermissions)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Class="role-card__chevron" />
+                            }
+                        </a>
+                    </li>
+                }
+            </ul>
+            <MudButton Href="/roles" Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward" Class="mt-2">
+                Administrar roles
+            </MudButton>
+        }
+    </Panel>
+}
+</div>
+
+@code {
+    private const int PageSize = 10;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Configuración", null, disabled: true),
+        new("Usuarios", null, disabled: true)
+    ];
+
+    private PagedResponse<UserResponse>? _page;
+    private string? _search;
+    private StatusFilter _status = StatusFilter.Active;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    private bool HasSecondaryActions =>
+        Session.HasAnyPermission(
+            AppPermissions.UsersUpdate,
+            AppPermissions.UsersAssignRoles,
+            AppPermissions.UsersResetPassword,
+            AppPermissions.UsersDisable);
+
+    private int? _activeCount;
+    private int? _inactiveCount;
+    private string? _countError;
+    private List<NovaBooks.Application.DTOs.Roles.RoleResponse>? _roles;
+    private string? _rolesError;
+
+    protected override Task OnInitializedAsync() =>
+        Task.WhenAll(
+            LoadAsync(),
+            LoadCountsAsync(),
+            Session.HasPermission(AppPermissions.RolesView) ? LoadRolesAsync() : Task.CompletedTask);
+
+    private async Task LoadCountsAsync()
+    {
+        var active = UsersApi.GetPagedAsync(null, StatusFilter.Active, 1, 1);
+        var inactive = UsersApi.GetPagedAsync(null, StatusFilter.Inactive, 1, 1);
+        await Task.WhenAll(active, inactive);
+
+        _countError = active.Result.Succeeded ? null : active.Result.Message;
+        _activeCount = active.Result.Data?.TotalItems;
+        _inactiveCount = inactive.Result.Data?.TotalItems;
+    }
+
+    private static string UsersLabel(int count) => count switch
+    {
+        0 => "Sin usuarios",
+        1 => "1 usuario",
+        _ => $"{count} usuarios"
+    };
+
+    private async Task LoadRolesAsync()
+    {
+        _rolesError = null;
+
+        var result = await RolesApi.GetAllAsync();
+
+        if (result.Succeeded)
+        {
+            _roles = result.Data;
+        }
+        else
+        {
+            _rolesError = result.Message;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        // Cancela una carga anterior para que una respuesta lenta no
+        // reemplace resultados más recientes.
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<UserResponse>> result =
+            await UsersApi.GetPagedAsync(_search, _status, _pageNumber, PageSize, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private Task SearchAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    private bool IsSelf(UserResponse user) =>
+        Session.User?.Id == user.Id.ToString();
+
+    private async Task CreateAsync()
+    {
+        UserResponse? created = await Dialogs.ShowFormAsync<UserFormDialog, UserResponse>(
+            "Nuevo usuario",
+            new DialogParameters<UserFormDialog>
+            {
+                { dialog => dialog.CanAssignRoles, Session.HasPermission(AppPermissions.UsersAssignRoles) }
+            });
+
+        if (created is not null)
+        {
+            Snackbar.Add($"Usuario {created.UserName} creado.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadCountsAsync());
+        }
+    }
+
+    private async Task EditAsync(UserResponse user)
+    {
+        UserResponse? updated = await Dialogs.ShowFormAsync<UserFormDialog, UserResponse>(
+            "Editar usuario",
+            new DialogParameters<UserFormDialog> { { dialog => dialog.User, user } });
+
+        if (updated is not null)
+        {
+            Snackbar.Add($"Usuario {updated.UserName} actualizado.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task AssignRolesAsync(UserResponse user)
+    {
+        UserResponse? updated = await Dialogs.ShowFormAsync<UserRolesDialog, UserResponse>(
+            "Asignar roles",
+            new DialogParameters<UserRolesDialog> { { dialog => dialog.User, user } });
+
+        if (updated is not null)
+        {
+            Snackbar.Add($"Roles de {updated.UserName} actualizados.", Severity.Success);
+
+            if (IsSelf(updated))
+            {
+                await Auth.RefreshUserAsync();
+            }
+
+            await LoadAsync();
+        }
+    }
+
+    private async Task ResetPasswordAsync(UserResponse user)
+    {
+        bool? done = await Dialogs.ShowFormAsync<ResetPasswordDialog, bool?>(
+            "Restablecer contraseña",
+            new DialogParameters<ResetPasswordDialog> { { dialog => dialog.User, user } });
+
+        if (done == true)
+        {
+            Snackbar.Add($"Contraseña de {user.UserName} restablecida. Sus sesiones anteriores se cerraron.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task ToggleStatusAsync(UserResponse user)
+    {
+        bool activate = !user.IsActive;
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Activar usuario" : "Desactivar usuario",
+            activate
+                ? $"¿Desea activar a {user.UserName}? Podrá volver a iniciar sesión."
+                : $"¿Desea desactivar a {user.UserName}? No podrá iniciar sesión y sus sesiones activas se cerrarán.",
+            activate ? "Activar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<UserResponse> result = await UsersApi.ChangeStatusAsync(user.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Usuario {user.UserName} {(activate ? "activado" : "desactivado")}.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadCountsAsync());
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

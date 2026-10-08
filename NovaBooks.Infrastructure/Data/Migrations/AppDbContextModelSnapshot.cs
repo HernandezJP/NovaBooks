@@ -1178,6 +1178,12 @@ namespace NovaBooks.Infrastructure.Data.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(50)");
 
+                    b.Property<decimal>("LIB_CostoReferencia")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
                     b.Property<string>("LIB_Descripcion")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
@@ -1275,6 +1281,8 @@ namespace NovaBooks.Infrastructure.Data.Migrations
                     b.ToTable("PB_LIBRO", null, t =>
                         {
                             t.HasCheckConstraint("CK_PB_LIBRO_ANIO_PUBLICACION", "[LIB_AnioPublicacion] IS NULL OR [LIB_AnioPublicacion] BETWEEN 1000 AND 9999");
+
+                            t.HasCheckConstraint("CK_PB_LIBRO_COSTO_REFERENCIA", "[LIB_CostoReferencia] >= 0");
 
                             t.HasCheckConstraint("CK_PB_LIBRO_DIMENSIONES", "([LIB_AltoCentimetros] IS NULL OR [LIB_AltoCentimetros] > 0) AND ([LIB_AnchoCentimetros] IS NULL OR [LIB_AnchoCentimetros] > 0) AND ([LIB_GrosorCentimetros] IS NULL OR [LIB_GrosorCentimetros] > 0) AND ([LIB_PesoGramos] IS NULL OR [LIB_PesoGramos] > 0)");
 

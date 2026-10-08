@@ -1,0 +1,26 @@
+<PageTitle>Acceso denegado | NovaBooks</PageTitle>
+
+<div class="access-denied">
+    <MudPaper Class="access-denied__card" Elevation="0">
+        <MudIcon Icon="@Icons.Material.Outlined.Lock" Color="Color.Error" Size="Size.Large" />
+        <MudText Typo="Typo.h5" Class="mt-3">Acceso denegado</MudText>
+        <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mt-1">
+            No tiene permiso para ver esta página.
+        </MudText>
+        @if (!string.IsNullOrEmpty(Permission))
+        {
+            <MudText Typo="Typo.caption" Class="mt-2">
+                Permiso requerido: <code>@Permission</code>
+            </MudText>
+        }
+        <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary" Class="mt-4"
+                   StartIcon="@Icons.Material.Filled.Home">
+            Ir al inicio
+        </MudButton>
+    </MudPaper>
+</div>
+
+@code {
+    [Parameter]
+    public string? Permission { get; set; }
+}

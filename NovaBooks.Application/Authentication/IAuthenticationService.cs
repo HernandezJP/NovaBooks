@@ -6,7 +6,7 @@ namespace NovaBooks.Application.Authentication
 {
     public interface IAuthenticationService
     {
-        Task<LoginResponse?> LoginAsync(
+        Task<LoginResult> LoginAsync(
             LoginRequest request,
             CancellationToken cancellationToken = default);
     }

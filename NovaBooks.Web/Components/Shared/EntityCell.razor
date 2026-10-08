@@ -1,0 +1,66 @@
+@* Celda de tabla con avatar (iniciales o ícono), título y subtítulo. *@
+
+<div class="cell-entity">
+    <span class="@AvatarClass" aria-hidden="true">
+        @if (ImageUrl is not null)
+        {
+            <img src="@ImageUrl" alt="" loading="lazy" class="cell-entity__image" />
+        }
+        else if (Icon is not null)
+        {
+            <MudIcon Icon="@Icon" Size="Size.Small" />
+        }
+        else
+        {
+            @Initials
+        }
+    </span>
+    <div class="cell-entity__text">
+        <div class="cell-primary">@Title</div>
+        @if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <div class="cell-secondary">@Subtitle</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Subtitle { get; set; }
+
+    /// <summary>Ícono en lugar de iniciales (por ejemplo, para libros).</summary>
+    [Parameter]
+    public string? Icon { get; set; }
+
+    /// <summary>Imagen (por ejemplo, portada del libro) en lugar del ícono.</summary>
+    [Parameter]
+    public string? ImageUrl { get; set; }
+
+    /// <summary>Atenúa el avatar (registros inactivos).</summary>
+    [Parameter]
+    public bool Muted { get; set; }
+
+    private string AvatarClass =>
+        "cell-entity__avatar" +
+        (Icon is not null || ImageUrl is not null ? " cell-entity__avatar--square" : string.Empty) +
+        (ImageUrl is not null ? " cell-entity__avatar--image" : string.Empty) +
+        (Muted ? " cell-entity__avatar--muted" : string.Empty);
+
+    private string Initials
+    {
+        get
+        {
+            string[] parts = Title.Split([' ', '.', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
+
+            return parts.Length switch
+            {
+                0 => "?",
+                1 => parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant(),
+                _ => $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant()
+            };
+        }
+    }
+}
