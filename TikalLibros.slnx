@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="TikalLibros.Api/TikalLibros.Api.csproj" />
+    <Project Path="TikalLibros.Application/TikalLibros.Application.csproj" />
+    <Project Path="TikalLibros.Domain/TikalLibros.Domain.csproj" />
+    <Project Path="TikalLibros.Infrastructure/TikalLibros.Infrastructure.csproj" />
+    <Project Path="TikalLibros.Web/TikalLibros.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="TikalLibros.IntegrationTests/TikalLibros.IntegrationTests.csproj" />
+    <Project Path="TikalLibros.UnitTests/TikalLibros.UnitTests.csproj" />
+  </Folder>
+</Solution>

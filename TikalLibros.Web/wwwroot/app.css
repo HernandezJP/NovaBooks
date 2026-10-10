@@ -1,0 +1,144 @@
+/* Tikal Libros: variables de diseño compartidas. */
+:root {
+    /* Marca */
+    --tl-color-primary: #1F3049;          /* azul marino: menú y títulos */
+    --tl-color-primary-dark: #162338;
+    --tl-color-accent: #C4562F;           /* terracota: acciones */
+    --tl-color-accent-dark: #A9461F;
+    --tl-color-sidebar: #1F3049;
+    --tl-color-sidebar-hover: #2A3E5C;
+
+    /* Superficies */
+    --tl-color-background: #F7F3EE;
+    --tl-color-surface: #FFFFFF;
+    --tl-color-surface-warm: #FFFCF8;
+    --tl-color-border: #E8E1D7;
+
+    /* Texto */
+    --tl-color-text: #1F2A3A;
+    --tl-color-text-muted: #5F6673;
+
+    /* Tarjetas de indicadores */
+    --tl-tint-peach: #FCEDE4;
+    --tl-tint-peach-strong: #F6D3BF;
+    --tl-tint-peach-icon: #C4562F;
+    --tl-tint-mint: #E8F3EA;
+    --tl-tint-mint-strong: #CDE6D3;
+    --tl-tint-mint-icon: #2F7A52;
+    --tl-tint-sky: #E8F0FA;
+    --tl-tint-sky-strong: #CFDDF1;
+    --tl-tint-sky-icon: #2F5C9A;
+    --tl-tint-sand: #F6F0E2;
+    --tl-tint-sand-strong: #EADFC4;
+    --tl-tint-sand-icon: #9A6B1E;
+
+    --tl-font-serif: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
+
+    --tl-space-1: 0.25rem;
+    --tl-space-2: 0.5rem;
+    --tl-space-3: 0.75rem;
+    --tl-space-4: 1rem;
+    --tl-space-5: 1.5rem;
+    --tl-space-6: 2rem;
+
+    --tl-radius-sm: 6px;
+    --tl-radius-md: 8px;
+    --tl-radius-lg: 12px;
+
+    --tl-shadow-sm: 0 1px 2px rgba(31, 42, 58, 0.05);
+    --tl-shadow-md: 0 6px 20px rgba(31, 42, 58, 0.08);
+}
+
+html, body {
+    background: var(--tl-color-background);
+    color: var(--tl-color-text);
+}
+
+h1:focus {
+    outline: none;
+}
+
+.page-content {
+    padding: var(--tl-space-5);
+    max-width: 1440px;
+    margin: 0 auto;
+}
+
+@media (max-width: 600px) {
+    .page-content {
+        padding: var(--tl-space-4);
+    }
+}
+
+.app-bar {
+    border-bottom: 1px solid var(--tl-color-border);
+}
+
+.app-loading {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tl-space-3);
+    color: var(--tl-color-text-muted);
+}
+
+.access-denied {
+    display: flex;
+    justify-content: center;
+    padding: var(--tl-space-6) var(--tl-space-4);
+}
+
+.access-denied__card {
+    width: 100%;
+    max-width: 440px;
+    padding: var(--tl-space-6);
+    text-align: center;
+    background: var(--tl-color-surface);
+    border: 1px solid var(--tl-color-border);
+    border-radius: var(--tl-radius-lg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.access-denied__permission {
+    margin: var(--tl-space-3) 0 0;
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    color: var(--tl-color-text-muted);
+    background: var(--tl-color-border);
+    border-radius: var(--tl-radius-lg);
+}
+
+#blazor-error-ui {
+    color-scheme: light only;
+    background: #FEF3C7;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}
+
+.blazor-error-boundary {
+    background: #B91C1C;
+    padding: 1rem;
+    color: white;
+}
+
+.blazor-error-boundary::after {
+    content: "Ocurrió un error al mostrar este contenido.";
+}
