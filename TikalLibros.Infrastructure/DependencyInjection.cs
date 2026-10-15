@@ -10,6 +10,9 @@ using TikalLibros.Infrastructure.Security.Permissions;
 using TikalLibros.Application.Interfaces;
 using TikalLibros.Infrastructure.Services;
 using TikalLibros.Infrastructure.Services.People;
+using TikalLibros.Infrastructure.Services.Documents;
+using TikalLibros.Infrastructure.Services.Purchasing;
+
 
 namespace TikalLibros.Infrastructure;
 
@@ -118,6 +121,12 @@ public static class DependencyInjection
         services.AddScoped<IEmployeeService, EmployeeService>();
 
         services.AddScoped<ISupplierService, SupplierService>();
+
+        services.AddScoped<DocumentNumberService>();
+
+        services.AddScoped<CurrentEmployeeResolver>();
+
+        services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 
 
 

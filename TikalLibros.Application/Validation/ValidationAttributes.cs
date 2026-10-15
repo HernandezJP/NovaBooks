@@ -243,3 +243,20 @@ public sealed partial class BusinessNameAttribute : ValidationAttribute
     [System.Text.RegularExpressions.GeneratedRegex(@"^[\p{L}\p{N}][\p{L}\p{M}\p{N} .,&'â€™\-()/]*$")]
     private static partial System.Text.RegularExpressions.Regex BusinessNameRegex();
 }
+
+/// <summary>NÃºmero decimal con como mÃ¡ximo la cantidad de decimales indicada.</summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class MaxDecimalsAttribute : ValidationAttribute
+{
+    private readonly int _decimals;
+
+    public MaxDecimalsAttribute(int decimals, string errorMessage)
+        : base(errorMessage)
+    {
+        _decimals = decimals;
+    }
+
+    public override bool IsValid(object? value) =>
+        value is not decimal number ||
+        decimal.Round(number, _decimals) == number;
+}
