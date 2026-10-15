@@ -24,6 +24,7 @@ public static class DatabaseSeeder
         await SeedInventoryCatalogsAsync(context, cancellationToken);
         await SeedSalesCatalogsAsync(context, cancellationToken);
         await SeedCashCatalogsAsync(context, cancellationToken);
+        await OrganizationSeeder.SeedAsync(context, cancellationToken);
     }
 
     private static async Task SeedGeographyAsync(

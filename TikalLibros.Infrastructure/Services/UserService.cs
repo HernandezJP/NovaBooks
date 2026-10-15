@@ -143,6 +143,20 @@ public sealed class UserService : IUserService
             return OperationResult<UserResponse>.Failure(roleErrors);
         }
 
+        if (request.EmployeeId is int employeeId)
+        {
+            OperationResult<UserResponse>? employeeError =
+                await ValidateEmployeeLinkAsync(
+                    employeeId,
+                    excludingUserId: null,
+                    cancellationToken);
+
+            if (employeeError is not null)
+            {
+                return employeeError;
+            }
+        }
+
         return await _context.ExecuteInTransactionAsync(
             async token =>
             {
@@ -155,6 +169,7 @@ public sealed class UserService : IUserService
                     EmailConfirmed = true,
                     LockoutEnabled = true,
                     USU_Activo = true,
+                    USU_EmpleadoId = request.EmployeeId,
                     USU_FechaCreacion = DateTime.UtcNow,
                     USU_CreadoPorUsuarioId = authenticatedUserId
                 };
@@ -287,6 +302,22 @@ public sealed class UserService : IUserService
             }
         }
 
+        if (isActive && user.USU_EmpleadoId is int linkedEmployeeId)
+        {
+            bool employeeActive = await _context.Empleados
+                .AnyAsync(
+                    employee => employee.EMP_Empleado == linkedEmployeeId &&
+                                employee.EMP_Activo,
+                    cancellationToken);
+
+            if (!employeeActive)
+            {
+                return OperationResult<UserResponse>.Conflict(
+                    "No se puede activar el usuario porque su empleado " +
+                    "estÃ¡ inactivo. Active primero al empleado o desvincÃºlelo.");
+            }
+        }
+
         user.USU_Activo = isActive;
         user.USU_FechaModificacion = DateTime.UtcNow;
         user.USU_ModificadoPorUsuarioId = authenticatedUserId;
@@ -416,6 +447,50 @@ public sealed class UserService : IUserService
             cancellationToken);
     }
 
+    public async Task<OperationResult<UserResponse>> AssignEmployeeAsync(
+        int id,
+        AssignUserEmployeeRequest request,
+        int authenticatedUserId,
+        CancellationToken cancellationToken = default)
+    {
+        ApplicationUser? user =
+            await _userManager.FindByIdAsync(id.ToString());
+
+        if (user is null)
+        {
+            return OperationResult<UserResponse>.Missing(
+                "El usuario solicitado no existe.");
+        }
+
+        if (request.EmployeeId is int employeeId)
+        {
+            OperationResult<UserResponse>? employeeError =
+                await ValidateEmployeeLinkAsync(
+                    employeeId,
+                    excludingUserId: user.Id,
+                    cancellationToken);
+
+            if (employeeError is not null)
+            {
+                return employeeError;
+            }
+        }
+
+        user.USU_EmpleadoId = request.EmployeeId;
+        user.USU_FechaModificacion = DateTime.UtcNow;
+        user.USU_ModificadoPorUsuarioId = authenticatedUserId;
+
+        IdentityResult result = await _userManager.UpdateAsync(user);
+
+        if (!result.Succeeded)
+        {
+            return IdentityFailure<UserResponse>(result);
+        }
+
+        return OperationResult<UserResponse>.Success(
+            (await FindResponseAsync(user.Id, cancellationToken))!);
+    }
+
     public async Task<OperationResult<bool>> ResetPasswordAsync(
         int id,
         ResetUserPasswordRequest request,
@@ -516,6 +591,30 @@ public sealed class UserService : IUserService
                 item => item.UserId,
                 item => item.Name ?? string.Empty);
 
+        int[] employeeIds = users
+            .Where(user => user.USU_EmpleadoId.HasValue)
+            .Select(user => user.USU_EmpleadoId!.Value)
+            .Distinct()
+            .ToArray();
+
+        Dictionary<int, (string Code, string Name)> employees =
+            (await _context.Empleados
+                .AsNoTracking()
+                .Where(employee => employeeIds.Contains(employee.EMP_Empleado))
+                .Select(employee => new
+                {
+                    employee.EMP_Empleado,
+                    employee.EMP_Codigo,
+                    employee.Persona.PersonaNatural!.PNA_PrimerNombre,
+                    employee.Persona.PersonaNatural.PNA_PrimerApellido
+                })
+                .ToListAsync(cancellationToken))
+            .ToDictionary(
+                employee => employee.EMP_Empleado,
+                employee => (
+                    employee.EMP_Codigo,
+                    $"{employee.PNA_PrimerNombre} {employee.PNA_PrimerApellido}"));
+
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         return users
@@ -537,7 +636,16 @@ public sealed class UserService : IUserService
                     LockoutEnd = isLockedOut ? user.LockoutEnd : null,
                     Roles = rolesByUser[user.Id]
                         .OrderBy(role => role)
-                        .ToArray()
+                        .ToArray(),
+                    EmployeeId = user.USU_EmpleadoId,
+                    EmployeeCode = user.USU_EmpleadoId is int employeeId &&
+                                   employees.TryGetValue(employeeId, out var employee)
+                        ? employee.Code
+                        : null,
+                    EmployeeName = user.USU_EmpleadoId is int nameEmployeeId &&
+                                   employees.TryGetValue(nameEmployeeId, out var named)
+                        ? named.Name
+                        : null
                 };
             })
             .ToArray();
@@ -572,7 +680,47 @@ public sealed class UserService : IUserService
         return null;
     }
 
+    /// <summary>
+    /// Un empleado solo puede tener un usuario y debe estar activo.
+    /// </summary>
+    private async Task<OperationResult<UserResponse>?> ValidateEmployeeLinkAsync(
+        int employeeId,
+        int? excludingUserId,
+        CancellationToken cancellationToken)
+    {
+        var employee = await _context.Empleados
+            .AsNoTracking()
+            .Where(item => item.EMP_Empleado == employeeId)
+            .Select(item => new { item.EMP_Codigo, item.EMP_Activo })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (employee is null)
+        {
+            return OperationResult<UserResponse>.Failure(
+                ["El empleado seleccionado no existe."]);
+        }
+
+        if (!employee.EMP_Activo)
+        {
+            return OperationResult<UserResponse>.Conflict(
+                $"El empleado {employee.EMP_Codigo} estÃ¡ inactivo.");
+        }
+
+        string? linkedUser = await _context.Users
+            .AsNoTracking()
+            .Where(user => user.USU_EmpleadoId == employeeId &&
+                           user.Id != excludingUserId)
+            .Select(user => user.UserName)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return linkedUser is null
+            ? null
+            : OperationResult<UserResponse>.Conflict(
+                $"El empleado {employee.EMP_Codigo} ya tiene el usuario {linkedUser}.");
+    }
+
     private async Task<string[]> ValidateRolesAsync(
+
         string[] roleNames,
         CancellationToken cancellationToken)
     {

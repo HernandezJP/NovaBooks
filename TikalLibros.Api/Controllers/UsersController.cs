@@ -211,7 +211,28 @@ public sealed class UsersController : ControllerBase
                 cancellationToken));
     }
 
+    /// <summary>Vincula o desvincula (EmployeeId null) el empleado del usuario.</summary>
+    [HasPermission(UserPermissions.Update)]
+    [HttpPut("{id:int}/empleado")]
+    [ProducesResponseType(typeof(UserResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<UserResponse>> AssignEmployee(
+        int id,
+        [FromBody] AssignUserEmployeeRequest request,
+        CancellationToken cancellationToken)
+    {
+        return FromResult(
+            await _userService.AssignEmployeeAsync(
+                id,
+                request,
+                this.GetAuthenticatedUserId(),
+                cancellationToken));
+    }
+
     [HasPermission(UserPermissions.ResetPassword)]
+
     [HttpPut("{id:int}/password")]
     [ProducesResponseType(
         StatusCodes.Status204NoContent)]

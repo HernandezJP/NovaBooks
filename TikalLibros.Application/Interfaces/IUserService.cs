@@ -43,7 +43,14 @@ public interface IUserService
         int authenticatedUserId,
         CancellationToken cancellationToken = default);
 
+    Task<OperationResult<UserResponse>> AssignEmployeeAsync(
+        int id,
+        AssignUserEmployeeRequest request,
+        int authenticatedUserId,
+        CancellationToken cancellationToken = default);
+
     Task<OperationResult<bool>> ResetPasswordAsync(
+
         int id,
         ResetUserPasswordRequest request,
         int authenticatedUserId,

@@ -175,3 +175,39 @@ public sealed class RequiredWhenAttribute : ValidationAttribute
             : ValidationResult.Success;
     }
 }
+
+/// <summary>DPI (CUI) de Guatemala con dígito verificador válido.</summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class DpiAttribute : ValidationAttribute
+{
+    public DpiAttribute()
+        : base("El DPI debe tener 13 dígitos válidos (correlativo, verificador, departamento y municipio).")
+    {
+    }
+
+    public override bool IsValid(object? value) =>
+        value is not string text ||
+        string.IsNullOrWhiteSpace(text) ||
+        DpiRules.IsValid(DpiRules.Normalize(text));
+}
+
+/// <summary>
+/// Nombre de usuario: letras sin tildes, dÃ­gitos, punto, guion y guion
+/// bajo; empieza con letra o dÃ­gito. Sin espacios.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed partial class UserNameAttribute : ValidationAttribute
+{
+    public UserNameAttribute()
+        : base("El nombre de usuario solo admite letras sin tildes, nÃºmeros, punto, guion y guion bajo, sin espacios.")
+    {
+    }
+
+    public override bool IsValid(object? value) =>
+        value is not string text ||
+        string.IsNullOrWhiteSpace(text) ||
+        UserNameRegex().IsMatch(text.Trim());
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]*$")]
+    private static partial System.Text.RegularExpressions.Regex UserNameRegex();
+}

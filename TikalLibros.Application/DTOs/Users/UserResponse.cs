@@ -18,4 +18,11 @@ public sealed class UserResponse
 
     public IReadOnlyCollection<string> Roles { get; set; } =
         Array.Empty<string>();
+
+    public int? EmployeeId { get; set; }
+
+    public string? EmployeeCode { get; set; }
+
+    public string? EmployeeName { get; set; }
+
 }

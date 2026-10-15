@@ -9,6 +9,7 @@ using TikalLibros.Infrastructure.Data.Options;
 using TikalLibros.Infrastructure.Security.Permissions;
 using TikalLibros.Application.Interfaces;
 using TikalLibros.Infrastructure.Services;
+using TikalLibros.Infrastructure.Services.People;
 
 namespace TikalLibros.Infrastructure;
 
@@ -110,7 +111,12 @@ public static class DependencyInjection
             IPermissionService,
             PermissionService>();
 
+        services.AddScoped<PersonContactWriter>();
+
         services.AddScoped<ICustomerService, CustomerService>();
+
+        services.AddScoped<IEmployeeService, EmployeeService>();
+
 
         services.AddScoped<IProductService, ProductService>();
 

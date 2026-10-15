@@ -14,6 +14,7 @@ namespace TikalLibros.Infrastructure.Security.Permissions
             .. RolePermissions.All,
             .. CustomerPermissions.All,
             .. SupplierPermissions.All,
+            .. EmployeePermissions.All,
             .. CatalogPermissions.All,
             .. PurchasingPermissions.All,
             .. InventoryPermissions.All,

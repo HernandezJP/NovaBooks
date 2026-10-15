@@ -1,4 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using TikalLibros.Application.Validation;
+
 
 namespace TikalLibros.Application.DTOs.Users;
 
@@ -10,7 +12,9 @@ public sealed class CreateUserRequest
         MinimumLength = 3,
         ErrorMessage =
             "El nombre de usuario debe contener entre 3 y 100 caracteres.")]
+    [UserName]
     public string UserName { get; set; } = string.Empty;
+
 
     [Required(ErrorMessage = "El correo electrónico es obligatorio.")]
     [EmailAddress(ErrorMessage = "El correo electrónico no es válido.")]
@@ -36,4 +40,8 @@ public sealed class CreateUserRequest
     public string Password { get; set; } = string.Empty;
 
     public List<string> Roles { get; set; } = [];
+
+    /// <summary>Empleado al que se vincula el usuario (opcional).</summary>
+    public int? EmployeeId { get; set; }
+
 }

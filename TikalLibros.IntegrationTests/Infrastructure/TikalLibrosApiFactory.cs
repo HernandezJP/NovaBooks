@@ -86,6 +86,11 @@ public class TikalLibrosApiFactory : WebApplicationFactory<Program>, IAsyncLifet
             provider.GetRequiredService<RoleManager<ApplicationRole>>(),
             provider.GetRequiredService<IConfiguration>());
 
+        await OrganizationSeeder.SeedAdministratorEmployeeAsync(
+            context,
+            provider.GetRequiredService<UserManager<ApplicationUser>>(),
+            provider.GetRequiredService<IConfiguration>());
+
         if (MarkDatabaseReady)
         {
             provider.GetRequiredService<DatabaseReadiness>().MarkReady();

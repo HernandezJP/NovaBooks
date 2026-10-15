@@ -166,6 +166,12 @@ public sealed class DatabaseInitializer
             _roleManager,
             _configuration);
 
+        await OrganizationSeeder.SeedAdministratorEmployeeAsync(
+            _context,
+            _userManager,
+            _configuration,
+            cancellationToken);
+
         if (_options.SeedDemoData ?? _environment.IsDevelopment())
         {
             _logger.LogInformation(

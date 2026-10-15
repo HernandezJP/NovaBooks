@@ -6,6 +6,7 @@ using TikalLibros.Application.Interfaces;
 using TikalLibros.Application.Validation;
 using TikalLibros.Domain.Entities.People;
 using TikalLibros.Infrastructure.Data;
+using TikalLibros.Infrastructure.Services.People;
 
 namespace TikalLibros.Infrastructure.Services;
 
@@ -16,10 +17,12 @@ public sealed class CustomerService : ICustomerService
     private const string CodePrefix = "CLI-";
 
     private readonly AppDbContext _context;
+    private readonly PersonContactWriter _contacts;
 
-    public CustomerService(AppDbContext context)
+    public CustomerService(AppDbContext context, PersonContactWriter contacts)
     {
         _context = context;
+        _contacts = contacts;
     }
 
     public async Task<PagedResponse<CustomerListItemResponse>> GetPagedAsync(
@@ -522,170 +525,39 @@ public sealed class CustomerService : ICustomerService
             (await GetByIdAsync(id, cancellationToken))!);
     }
 
-    /// <summary>
-    /// Reemplaza los contactos principales. Los reemplazados quedan
-    /// inactivos; si un valor anterior vuelve a usarse se reactiva.
-    /// Se guarda en dos pasos para respetar los índices únicos de
-    /// "un principal activo por persona".
-    /// </summary>
-    private async Task SyncContactsAsync(
+    private Task SyncContactsAsync(
         int personId,
         CustomerInput input,
         ReferenceData references,
         CancellationToken cancellationToken)
     {
-        List<PB_PERSONA_IDENTIFICACION> identifications =
-            await _context.PersonasIdentificaciones
-                .Where(item => item.PID_PersonaId == personId)
-                .ToListAsync(cancellationToken);
-
-        List<PB_PERSONA_CORREO> emails =
-            await _context.PersonasCorreos
-                .Where(item => item.PCO_PersonaId == personId)
-                .ToListAsync(cancellationToken);
-
-        List<PB_PERSONA_TELEFONO> phones =
-            await _context.PersonasTelefonos
-                .Where(item => item.PTE_PersonaId == personId)
-                .ToListAsync(cancellationToken);
-
-        foreach (PB_PERSONA_IDENTIFICACION item in identifications.Where(item => item.PID_Activo))
-        {
-            bool isNit = item.PID_TipoIdentificacionId == references.NitTypeId;
-
-            bool keep = isNit
-                ? item.PID_Numero == input.Nit
-                : item.PID_TipoIdentificacionId == input.IdentificationTypeId &&
-                  item.PID_Numero == input.IdentificationNumber;
-
-            item.PID_Principal = keep && item.PID_Principal && !isNit;
-            item.PID_Activo = keep;
-        }
-
-        foreach (PB_PERSONA_CORREO item in emails.Where(item => item.PCO_Activo))
-        {
-            bool keep = string.Equals(
-                item.PCO_Correo,
-                input.Email,
-                StringComparison.OrdinalIgnoreCase);
-
-            item.PCO_Principal = keep && item.PCO_Principal;
-            item.PCO_Activo = keep;
-        }
-
-        foreach (PB_PERSONA_TELEFONO item in phones.Where(item => item.PTE_Activo))
-        {
-            bool keep = item.PTE_Numero == input.Phone;
-
-            item.PTE_Principal = keep && item.PTE_Principal;
-            item.PTE_Activo = keep;
-        }
-
-        await _context.SaveChangesAsync(cancellationToken);
+        List<PersonIdentification> identifications = [];
 
         if (input.IdentificationNumber is not null)
         {
-            UpsertIdentification(
-                identifications,
-                personId,
+            identifications.Add(new PersonIdentification(
                 input.IdentificationTypeId!.Value,
                 input.IdentificationNumber,
-                principal: true);
+                Principal: true));
         }
 
         if (input.Nit is not null)
         {
-            UpsertIdentification(
-                identifications,
-                personId,
+            identifications.Add(new PersonIdentification(
                 references.NitTypeId,
                 input.Nit,
-                principal: false);
+                Principal: false));
         }
 
-        if (input.Email is not null)
-        {
-            PB_PERSONA_CORREO? email = emails.FirstOrDefault(item =>
-                string.Equals(
-                    item.PCO_Correo,
-                    input.Email,
-                    StringComparison.OrdinalIgnoreCase));
-
-            if (email is null)
-            {
-                _context.PersonasCorreos.Add(new PB_PERSONA_CORREO
-                {
-                    PCO_PersonaId = personId,
-                    PCO_Correo = input.Email,
-                    PCO_Principal = true,
-                    PCO_Activo = true
-                });
-            }
-            else
-            {
-                email.PCO_Correo = input.Email;
-                email.PCO_Principal = true;
-                email.PCO_Activo = true;
-            }
-        }
-
-        if (input.Phone is not null)
-        {
-            PB_PERSONA_TELEFONO? phone = phones.FirstOrDefault(item =>
-                item.PTE_Numero == input.Phone);
-
-            if (phone is null)
-            {
-                _context.PersonasTelefonos.Add(new PB_PERSONA_TELEFONO
-                {
-                    PTE_PersonaId = personId,
-                    PTE_TipoTelefonoId = input.PhoneTypeId!.Value,
-                    PTE_Numero = input.Phone,
-                    PTE_Extension = input.PhoneExtension,
-                    PTE_Principal = true,
-                    PTE_Activo = true
-                });
-            }
-            else
-            {
-                phone.PTE_TipoTelefonoId = input.PhoneTypeId!.Value;
-                phone.PTE_Extension = input.PhoneExtension;
-                phone.PTE_Principal = true;
-                phone.PTE_Activo = true;
-            }
-        }
-
-        await _context.SaveChangesAsync(cancellationToken);
-    }
-
-    private void UpsertIdentification(
-        List<PB_PERSONA_IDENTIFICACION> identifications,
-        int personId,
-        int typeId,
-        string number,
-        bool principal)
-    {
-        PB_PERSONA_IDENTIFICACION? identification =
-            identifications.FirstOrDefault(item =>
-                item.PID_TipoIdentificacionId == typeId &&
-                item.PID_Numero == number);
-
-        if (identification is null)
-        {
-            _context.PersonasIdentificaciones.Add(new PB_PERSONA_IDENTIFICACION
-            {
-                PID_PersonaId = personId,
-                PID_TipoIdentificacionId = typeId,
-                PID_Numero = number,
-                PID_Principal = principal,
-                PID_Activo = true
-            });
-
-            return;
-        }
-
-        identification.PID_Principal = principal;
-        identification.PID_Activo = true;
+        return _contacts.SyncAsync(
+            personId,
+            new PersonContacts(
+                identifications,
+                input.Email,
+                input.PhoneTypeId,
+                input.Phone,
+                input.PhoneExtension),
+            cancellationToken);
     }
 
     /// <summary>
@@ -771,47 +643,17 @@ public sealed class CustomerService : ICustomerService
         return null;
     }
 
-    /// <summary>
-    /// El índice único (tipo, número) abarca a todas las personas,
-    /// incluidos registros inactivos y proveedores.
-    /// </summary>
-    private async Task<string?> FindIdentificationOwnerAsync(
+    private Task<string?> FindIdentificationOwnerAsync(
         int typeId,
         string number,
         int? excludingPersonId,
         CancellationToken cancellationToken)
     {
-        var owner =
-            await _context.PersonasIdentificaciones
-                .AsNoTracking()
-                .Where(item =>
-                    item.PID_TipoIdentificacionId == typeId &&
-                    item.PID_Numero == number &&
-                    item.PID_PersonaId != excludingPersonId)
-                .Select(item => new
-                {
-                    item.PID_Activo,
-                    CustomerCode = item.Persona.Cliente != null
-                        ? item.Persona.Cliente.CLI_Codigo
-                        : null,
-                    CustomerActive = item.Persona.Cliente != null &&
-                                     item.Persona.Cliente.CLI_Activo
-                })
-                .FirstOrDefaultAsync(cancellationToken);
-
-        if (owner is null)
-        {
-            return null;
-        }
-
-        string description = owner.CustomerCode is null
-            ? " para otra persona"
-            : $" para el cliente {owner.CustomerCode}";
-
-        bool inactive = !owner.PID_Activo ||
-                        (owner.CustomerCode is not null && !owner.CustomerActive);
-
-        return description + (inactive ? " (registro inactivo)" : string.Empty);
+        return _contacts.FindIdentificationOwnerAsync(
+            typeId,
+            number,
+            excludingPersonId,
+            cancellationToken);
     }
 
     private async Task<string> GenerateCodeAsync(
