@@ -1,0 +1,21 @@
+@* Etiqueta de estado de documentos (órdenes, recepciones) y existencias. *@
+
+<span class="status-pill @CssClass">@Text</span>
+
+@code {
+    /// <summary>Código de estado (BORRADOR, EMITIDA, AGOTADO…).</summary>
+    [Parameter, EditorRequired]
+    public string Code { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Text { get; set; } = string.Empty;
+
+    private string CssClass => Code switch
+    {
+        "RECIBIDA" or "PROCESADA" or "NORMAL" => "status-pill--active",
+        "EMITIDA" or "SOBRE_MAXIMO" => "status-pill--info",
+        "PARCIAL" or "BAJO_MINIMO" => "status-pill--warning",
+        "CANCELADA" or "ANULADA" or "AGOTADO" => "status-pill--danger",
+        _ => "status-pill--neutral"
+    };
+}

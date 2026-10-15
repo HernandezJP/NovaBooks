@@ -22,7 +22,28 @@ public sealed class MenuService : IMenuService
 
         Group("personas", "Personas",
             Item("clientes", "Clientes", "/clientes", "customers",
-                CustomerPermissions.View)),
+                CustomerPermissions.View),
+            Item("proveedores", "Proveedores", "/proveedores", "suppliers",
+                SupplierPermissions.View),
+            Item("empleados", "Empleados", "/empleados", "employees",
+                EmployeePermissions.View)),
+
+        Group("compras", "Compras",
+            Item("ordenes", "Órdenes de compra", "/compras", "purchases",
+                PurchasingPermissions.View),
+            Item("recepciones", "Recepciones", "/recepciones", "receptions",
+                PurchasingPermissions.View)),
+
+        Group("inventario", "Inventario",
+            Item("existencias", "Existencias", "/inventario/existencias", "stock",
+                InventoryPermissions.View),
+            Item("alertas", "Alertas", "/inventario/alertas", "alerts",
+                InventoryPermissions.View),
+            Item("movimientos", "Movimientos y kardex", "/inventario/movimientos", "movements",
+                InventoryPermissions.ViewMovements),
+            Item("ajustes", "Ajustes", "/inventario/ajustes", "adjustments",
+                InventoryPermissions.Adjust)),
+
 
         Group("configuracion", "Configuración",
             Item("usuarios", "Usuarios", "/usuarios", "users",

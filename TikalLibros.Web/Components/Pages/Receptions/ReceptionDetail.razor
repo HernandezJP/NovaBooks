@@ -1,0 +1,153 @@
+@page "/recepciones/{Id:int}"
+@attribute [RequirePermission(AppPermissions.PurchasesView)]
+@using TikalLibros.Application.DTOs.Purchasing
+@inject ReceptionsApi ReceptionsApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_reception?.Number ?? "Recepción") | Tikal Libros</PageTitle>
+
+<PageHeader Title="@($"Recepción {_reception?.Number}")" Breadcrumbs="_breadcrumbs"
+            Description="@(_reception is null ? null : $"Orden {_reception.PurchaseOrderNumber} · {_reception.SupplierName}")">
+    <Actions>
+        @if (_reception is not null)
+        {
+            <DocumentStatus Code="@_reception.StatusCode" Text="@_reception.Status" />
+        }
+    </Actions>
+</PageHeader>
+
+@if (_loadError is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar la recepción" Message="@_loadError" OnRetry="LoadAsync" /></div>
+}
+else if (_reception is null)
+{
+    <div class="panel"><LoadingState Rows="6" /></div>
+}
+else
+{
+    <div class="layout-stack">
+        <div class="panel">
+            <dl class="detail-list">
+                <dt>Orden de compra</dt>
+                <dd><a href="@($"/compras/{_reception.PurchaseOrderId}")">@_reception.PurchaseOrderNumber</a> · @_reception.PurchaseOrderStatus</dd>
+                <dt>Fecha</dt>
+                <dd>@_reception.ReceivedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @_reception.Warehouse</dd>
+                <dt>Factura del proveedor</dt>
+                <dd>@(_reception.SupplierDocumentNumber is null ? "No indicada" : $"{(_reception.SupplierDocumentSeries is null ? "" : _reception.SupplierDocumentSeries + "-")}{_reception.SupplierDocumentNumber}")</dd>
+                <dt>Recibió</dt>
+                <dd>@_reception.ReceivedBy</dd>
+                <dt>Movimiento de inventario</dt>
+                <dd>@(_reception.MovementNumber ?? "—")</dd>
+                <dt>Costo ingresado</dt>
+                <dd class="money">Q @_reception.TotalCost.ToString("N2")</dd>
+                @if (!string.IsNullOrWhiteSpace(_reception.Notes))
+                {
+                    <dt>Observaciones</dt>
+                    <dd><p class="notes-block">@_reception.Notes</p></dd>
+                }
+            </dl>
+
+            <div class="form-actions">
+                <MudButton Href="/recepciones" Variant="Variant.Text">Volver</MudButton>
+                @if (_reception.CanAnnul && Session.HasPermission(AppPermissions.PurchasesReceive) && Session.HasPermission(AppPermissions.PurchasesCancel))
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Undo"
+                               OnClick="AnnulAsync" Disabled="_saving">
+                        Anular recepción
+                    </MudButton>
+                }
+            </div>
+        </div>
+
+        <Panel Title="Libros" Icon="@Icons.Material.Outlined.MenuBook" Subtitle="Costos netos en quetzales (sin IVA, con descuento).">
+            <div class="table-scroll">
+                <MudTable Items="_reception.Lines" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>Libro</MudTh>
+                        <MudTh Class="text-right">Aceptadas</MudTh>
+                        <MudTh Class="text-right">Rechazadas</MudTh>
+                        <MudTh Class="text-right col-optional">Costo unit.</MudTh>
+                        <MudTh Class="col-optional">Lote</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary">@context.Title</div>
+                            <div class="cell-secondary">@context.BookCode</div>
+                            @if (context.RejectReason is not null)
+                            {
+                                <div class="cell-secondary">Rechazo: @context.RejectReason</div>
+                            }
+                        </MudTd>
+                        <MudTd Class="number qty-in">@context.Accepted.ToString("N0")</MudTd>
+                        <MudTd Class="number">@context.Rejected.ToString("N0")</MudTd>
+                        <MudTd Class="number col-optional">@context.UnitCost.ToString("N2")</MudTd>
+                        <MudTd Class="col-optional cell-nowrap">@(context.LotNumber ?? "—")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        </Panel>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Recepciones", "/recepciones"),
+        new("Detalle", null, disabled: true)
+    ];
+
+    private ReceptionResponse? _reception;
+    private string? _loadError;
+    private bool _saving;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        ApiResult<ReceptionResponse> result = await ReceptionsApi.GetAsync(Id);
+
+        if (result.Succeeded)
+        {
+            _reception = result.Data;
+        }
+        else
+        {
+            _loadError = result.Message;
+        }
+    }
+
+    private async Task AnnulAsync()
+    {
+        string? reason = await Dialogs.AskReasonAsync(
+            $"Anular recepción {_reception!.Number}",
+            "Se retirarán del inventario las unidades aceptadas y la orden volverá a quedar pendiente. Solo es posible si los lotes no han tenido salidas.",
+            "Anular recepción");
+
+        if (reason is null)
+        {
+            return;
+        }
+
+        _saving = true;
+        ApiResult<ReceptionResponse> result = await ReceptionsApi.AnnulAsync(_reception.Id, reason);
+        _saving = false;
+
+        if (result.Succeeded)
+        {
+            _reception = result.Data;
+            Snackbar.Add($"Recepción {_reception!.Number} anulada; el inventario fue revertido.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+}

@@ -1,0 +1,256 @@
+@page "/empleados"
+@attribute [RequirePermission(AppPermissions.EmployeesView)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Employees
+@inject EmployeesApi EmployeesApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Empleados | Tikal Libros</PageTitle>
+
+<PageHeader Title="Empleados"
+            Description="Personal de la librería. Cada empleado puede tener un usuario para registrar compras e inventario."
+            Breadcrumbs="_breadcrumbs" />
+
+<Panel Title="Empleados" Subtitle="Busque por código, nombre o DPI." Icon="@Icons.Material.Outlined.Engineering">
+    <Actions>
+        @if (Session.HasPermission(AppPermissions.EmployeesCreate))
+        {
+            <MudButton Href="/empleados/nuevo" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PersonAdd">
+                Nuevo empleado
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+        <div class="list-toolbar">
+            <MudTextField @bind-Value="_search" Placeholder="Buscar por código, nombre o DPI"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          DebounceInterval="400" OnDebounceIntervalElapsed="SearchAsync"
+                          OnClearButtonClick="ClearSearchAsync" MaxLength="100"
+                          aria-label="Buscar empleados" Class="list-toolbar__search tl-filter-plain" />
+
+            <MudSelect T="int?" Value="_positionId" ValueChanged="PositionChangedAsync" Label="Puesto"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Clearable="true" Class="list-toolbar__filter">
+                @foreach (CatalogOptionResponse position in _positions)
+                {
+                    <MudSelectItem T="int?" Value="position.Id">@position.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                <MudSelectItem Value="StatusFilter.Active">Activos</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.Inactive">Inactivos</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.All">Todos</MudSelectItem>
+            </MudSelect>
+        </div>
+
+        @if (_loading && _page is null)
+        {
+            <LoadingState />
+        }
+        else if (_error is not null)
+        {
+            <ErrorState Title="No fue posible cargar los empleados" Message="@_error" OnRetry="LoadAsync" />
+        }
+        else if (_page is { Items.Count: 0 })
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.Engineering" Title="No se encontraron empleados"
+                        Message="@(HasFilters ? "Ajuste la búsqueda o los filtros." : "Registre el primer empleado con el botón Nuevo empleado.")" />
+        }
+        else if (_page is not null)
+        {
+            <div class="table-scroll">
+                <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading"
+                          Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>Empleado</MudTh>
+                        <MudTh>Puesto</MudTh>
+                        <MudTh Class="col-optional">DPI</MudTh>
+                        <MudTh Class="col-optional">Contratación</MudTh>
+                        <MudTh>Usuario</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh Class="tl-table__actions">Acciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <EntityCell Title="@context.FullName" Subtitle="@($"{context.Code} · {context.Branch}")" Muted="!context.IsActive" />
+                        </MudTd>
+                        <MudTd>@context.Position</MudTd>
+                        <MudTd Class="col-optional cell-nowrap">@(context.Dpi ?? "—")</MudTd>
+                        <MudTd Class="col-optional cell-nowrap">@context.HireDate.ToString("dd/MM/yyyy")</MudTd>
+                        <MudTd Class="cell-nowrap">
+                            @if (context.UserName is null)
+                            {
+                                <span class="status-pill status-pill--neutral">Sin usuario</span>
+                            }
+                            else
+                            {
+                                <span class="role-pill">@context.UserName</span>
+                            }
+                        </MudTd>
+                        <MudTd><StatusChip IsActive="context.IsActive" /></MudTd>
+                        <MudTd Class="tl-table__actions">
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                     aria-label="@($"Más acciones para {context.FullName}")">
+                                <MudMenuItem Icon="@(CanEdit ? Icons.Material.Outlined.Edit : Icons.Material.Outlined.Visibility)"
+                                             Href="@($"/empleados/{context.Id}")">
+                                    @(CanEdit ? "Editar" : "Ver ficha")
+                                </MudMenuItem>
+                                @if (Session.HasPermission(AppPermissions.EmployeesDisable))
+                                {
+                                    <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                 OnClick="() => ToggleStatusAsync(context)">
+                                        @(context.IsActive ? "Desactivar" : "Reactivar")
+                                    </MudMenuItem>
+                                }
+                            </MudMenu>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+
+            <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                       TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+        }
+    </ChildContent>
+</Panel>
+
+@code {
+    private const int PageSize = 10;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Personas", null, disabled: true),
+        new("Empleados", null, disabled: true)
+    ];
+
+    private PagedResponse<EmployeeListItemResponse>? _page;
+    private IReadOnlyCollection<CatalogOptionResponse> _positions = [];
+    private string? _search;
+    private int? _positionId;
+    private StatusFilter _status = StatusFilter.Active;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    private bool CanEdit => Session.HasPermission(AppPermissions.EmployeesUpdate);
+
+    private bool HasFilters => !string.IsNullOrWhiteSpace(_search) || _positionId.HasValue || _status != StatusFilter.Active;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Task load = LoadAsync();
+        ApiResult<EmployeeCatalogsResponse> catalogs = await EmployeesApi.GetCatalogsAsync();
+        _positions = catalogs.Data?.Positions ?? [];
+        await load;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<EmployeeListItemResponse>> result =
+            await EmployeesApi.GetPagedAsync(_search, _status, _positionId, _pageNumber, PageSize, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private Task SearchAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PositionChangedAsync(int? value)
+    {
+        _positionId = value;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    private async Task ToggleStatusAsync(EmployeeListItemResponse employee)
+    {
+        bool activate = !employee.IsActive;
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Reactivar empleado" : "Desactivar empleado",
+            activate
+                ? $"¿Desea reactivar a {employee.FullName}? Su usuario, si tiene, debe reactivarse aparte."
+                : employee.UserName is null
+                    ? $"¿Desea desactivar a {employee.FullName}? Se conservará su historial."
+                    : $"¿Desea desactivar a {employee.FullName}? También se desactivará su usuario {employee.UserName} y se cerrarán sus sesiones.",
+            activate ? "Reactivar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<EmployeeResponse> result = await EmployeesApi.ChangeStatusAsync(employee.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Empleado {employee.FullName} {(activate ? "reactivado" : "desactivado")}.", Severity.Success);
+            await LoadAsync();
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

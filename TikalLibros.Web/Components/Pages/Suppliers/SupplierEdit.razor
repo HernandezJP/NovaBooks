@@ -1,0 +1,298 @@
+@page "/proveedores/nuevo"
+@page "/proveedores/{Id:int}"
+@attribute [RequirePermission(AppPermissions.SuppliersView)]
+@using TikalLibros.Application.DTOs.Suppliers
+@inject SuppliersApi SuppliersApi
+@inject SessionState Session
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>@PageTitleText | Tikal Libros</PageTitle>
+
+@if (IsCreate && !Session.HasPermission(AppPermissions.SuppliersCreate))
+{
+    <AccessDenied Permission="@AppPermissions.SuppliersCreate" />
+}
+else
+{
+    <PageHeader Title="@PageTitleText" Breadcrumbs="_breadcrumbs"
+                Description="@(IsCreate ? "Registre los datos fiscales, de contacto y las condiciones de crédito del proveedor." : _supplier?.Code)">
+        <Actions>
+            @if (!IsCreate && _supplier is not null)
+            {
+                @if (_supplier.OpenOrders > 0)
+                {
+                    <span class="status-pill status-pill--info">@_supplier.OpenOrders orden(es) abiertas</span>
+                }
+                <StatusChip IsActive="_supplier.IsActive" />
+            }
+        </Actions>
+    </PageHeader>
+
+    @if (_loadError is not null)
+    {
+        <div class="panel">
+            <ErrorState Title="No fue posible cargar el proveedor" Message="@_loadError" OnRetry="LoadAsync" />
+        </div>
+    }
+    else if (_catalogs is null || (!IsCreate && _supplier is null))
+    {
+        <div class="panel"><LoadingState Rows="6" /></div>
+    }
+    else
+    {
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmitAsync">
+            <DataAnnotationsValidator />
+            <ServerValidator Result="_saveResult" />
+
+            <div class="panel">
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+                @if (ReadOnly)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                        Está viendo el proveedor en modo de solo lectura.
+                    </MudAlert>
+                }
+
+                <fieldset disabled="@(ReadOnly || _saving)" class="form-fieldset">
+                    <div class="form-section">
+                        <div class="form-section__title">Datos generales</div>
+                        <div class="form-grid">
+                            <MudSelect T="string" @bind-Value="_model.PersonType" Label="Tipo de persona *"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense"
+                                       Disabled="@(!IsCreate || ReadOnly)"
+                                       HelperText="@(IsCreate ? null : "No puede cambiarse en un proveedor existente.")">
+                                @foreach (var type in _catalogs.PersonTypes)
+                                {
+                                    <MudSelectItem T="string" Value="type.Code">@type.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudTextField T="string" Value="@(_supplier?.Code ?? "Se asignará al guardar")" Label="Código"
+                                          HelperText="Lo asigna el sistema automáticamente."
+                                          ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+
+                            @if (IsLegal)
+                            {
+                                <MudTextField @bind-Value="_model.LegalName" For="@(() => _model.LegalName)"
+                                              Label="Razón social *" MaxLength="250" Class="tl-filter-business"
+                                              HelperText="Letras, números y . , & ' - ( ) /"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                <MudTextField @bind-Value="_model.TradeName" For="@(() => _model.TradeName)"
+                                              Label="Nombre comercial" MaxLength="250" Class="tl-filter-business"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                            }
+                            else
+                            {
+                                <MudTextField @bind-Value="_model.FirstName" For="@(() => _model.FirstName)"
+                                              Label="Primer nombre *" MaxLength="100" Class="tl-filter-name"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                <MudTextField @bind-Value="_model.MiddleName" For="@(() => _model.MiddleName)"
+                                              Label="Segundo nombre" MaxLength="100" Class="tl-filter-name"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                <MudTextField @bind-Value="_model.LastName" For="@(() => _model.LastName)"
+                                              Label="Primer apellido *" MaxLength="100" Class="tl-filter-name"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                <MudTextField @bind-Value="_model.SecondLastName" For="@(() => _model.SecondLastName)"
+                                              Label="Segundo apellido" MaxLength="100" Class="tl-filter-name"
+                                              Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                            }
+
+                            <MudTextField @bind-Value="_model.Nit" For="@(() => _model.Nit)" Label="NIT *"
+                                          MaxLength="20" Class="tl-filter-nit"
+                                          HelperText="Dígitos y verificador (número o K), con o sin guion."
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="form-section__title">Contacto</div>
+                        <div class="form-grid">
+                            <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)" Label="Correo electrónico"
+                                          InputType="InputType.Email" MaxLength="256"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-email" />
+                            <MudSelect T="int?" @bind-Value="_model.PhoneTypeId" For="@(() => _model.PhoneTypeId)" Label="Tipo de teléfono"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" ReadOnly="ReadOnly">
+                                @foreach (var type in _catalogs.PhoneTypes)
+                                {
+                                    <MudSelectItem T="int?" Value="type.Id">@type.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                            <MudTextField @bind-Value="_model.Phone" For="@(() => _model.Phone)" Label="Teléfono"
+                                          InputType="InputType.Telephone" MaxLength="25" Class="tl-filter-phone"
+                                          HelperText="8 a 15 dígitos; se admite + al inicio."
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                            <MudTextField @bind-Value="_model.PhoneExtension" For="@(() => _model.PhoneExtension)" Label="Extensión"
+                                          MaxLength="10" Class="tl-filter-digits" InputMode="InputMode.numeric"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="form-section__title">Crédito y observaciones</div>
+                        <div class="form-grid">
+                            <MudNumericField T="decimal" @bind-Value="_model.CreditLimit" For="@(() => _model.CreditLimit)"
+                                             Label="Límite de crédito (Q)" Min="0m" Max="9999999999m" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             Format="N2" HideSpinButtons="true" ReadOnly="ReadOnly"
+                                             HelperText="0 si se le compra al contado." />
+                            <MudNumericField T="int" @bind-Value="_model.CreditDays" For="@(() => _model.CreditDays)"
+                                             Label="Días de crédito" Min="0" Max="365" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             ReadOnly="ReadOnly" />
+                        </div>
+                        <MudTextField @bind-Value="_model.Notes" For="@(() => _model.Notes)" Label="Observaciones" Counter="1000" MaxLength="1000"
+                                      Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3 tl-filter-plain" ReadOnly="ReadOnly" />
+                    </div>
+                </fieldset>
+
+                <div class="form-actions">
+                    <MudButton Href="/proveedores" Variant="Variant.Text" Disabled="_saving">
+                        @(ReadOnly ? "Volver" : "Cancelar")
+                    </MudButton>
+                    @if (!ReadOnly)
+                    {
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Save" Disabled="_saving">
+                            @(_saving ? "Guardando…" : "Guardar")
+                        </MudButton>
+                    }
+                </div>
+            </div>
+        </EditForm>
+    }
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private SaveSupplierRequest _model = new();
+    private SupplierResponse? _supplier;
+    private SupplierCatalogsResponse? _catalogs;
+    private string? _loadError;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+    private List<BreadcrumbItem> _breadcrumbs = [];
+
+    private bool IsCreate => Id is null;
+
+    private bool IsLegal => _model.PersonType == SaveSupplierRequest.LegalPerson;
+
+    private bool ReadOnly => !IsCreate && !Session.HasPermission(AppPermissions.SuppliersUpdate);
+
+    private string PageTitleText => IsCreate ? "Nuevo proveedor" : _supplier?.DisplayName ?? "Proveedor";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _breadcrumbs =
+        [
+            new("Inicio", "/"),
+            new("Proveedores", "/proveedores"),
+            new(IsCreate ? "Nuevo" : "Detalle", null, disabled: true)
+        ];
+
+        if (IsCreate && !Session.HasPermission(AppPermissions.SuppliersCreate))
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+
+        Task<ApiResult<SupplierCatalogsResponse>> catalogsTask = SuppliersApi.GetCatalogsAsync();
+        Task<ApiResult<SupplierResponse>>? supplierTask = IsCreate ? null : SuppliersApi.GetAsync(Id!.Value);
+
+        ApiResult<SupplierCatalogsResponse> catalogs = await catalogsTask;
+
+        if (!catalogs.Succeeded)
+        {
+            _loadError = catalogs.Message;
+            return;
+        }
+
+        _catalogs = catalogs.Data;
+
+        if (supplierTask is null)
+        {
+            _model = new SaveSupplierRequest { PersonType = SaveSupplierRequest.LegalPerson };
+            return;
+        }
+
+        ApiResult<SupplierResponse> supplier = await supplierTask;
+
+        if (!supplier.Succeeded || supplier.Data is null)
+        {
+            _loadError = supplier.Message;
+            return;
+        }
+
+        _supplier = supplier.Data;
+        _model = new SaveSupplierRequest
+        {
+            PersonType = _supplier.PersonType,
+            FirstName = _supplier.FirstName,
+            MiddleName = _supplier.MiddleName,
+            LastName = _supplier.LastName,
+            SecondLastName = _supplier.SecondLastName,
+            LegalName = _supplier.LegalName,
+            TradeName = _supplier.TradeName,
+            Nit = _supplier.Nit ?? string.Empty,
+            Email = _supplier.Email,
+            PhoneTypeId = _supplier.PhoneTypeId,
+            Phone = _supplier.Phone,
+            PhoneExtension = _supplier.PhoneExtension,
+            CreditLimit = _supplier.CreditLimit,
+            CreditDays = _supplier.CreditDays,
+            Notes = _supplier.Notes
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || ReadOnly)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<SupplierResponse> result = IsCreate
+                ? await SuppliersApi.CreateAsync(_model)
+                : await SuppliersApi.UpdateAsync(Id!.Value, _model);
+
+            if (!result.Succeeded || result.Data is null)
+            {
+                _saveResult = result;
+                return;
+            }
+
+            Snackbar.Add(
+                IsCreate ? $"Proveedor {result.Data.Code} creado." : $"Proveedor {result.Data.Code} actualizado.",
+                Severity.Success);
+
+            Navigation.NavigateTo("/proveedores");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task OnInvalidSubmitAsync()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("tikalLibros.scrollToFirstError");
+    }
+}

@@ -20,7 +20,7 @@ public sealed class CustomersTests : ApiTestBase
     {
         PersonType = SaveCustomerRequest.NaturalPerson,
         FirstName = "Ana",
-        LastName = Unique("Prueba"),
+        LastName = UniqueName("Prueba"),
         Nit = RandomDigits(7) + "K",
         Email = $"{Unique("cliente")}@correo.test",
         PhoneTypeId = catalogs.PhoneTypes.First().Id,

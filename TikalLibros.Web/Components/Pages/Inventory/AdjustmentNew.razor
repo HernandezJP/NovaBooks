@@ -1,0 +1,323 @@
+@page "/inventario/ajustes/nuevo"
+@attribute [RequirePermission(AppPermissions.InventoryAdjust)]
+@using System.ComponentModel.DataAnnotations
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Inventory
+@using TikalLibros.Application.Validation
+@inject InventoryApi InventoryApi
+@inject BookLookup BookLookup
+@inject SessionState Session
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Nuevo ajuste | Tikal Libros</PageTitle>
+
+<PageHeader Title="Nuevo ajuste de inventario" Breadcrumbs="_breadcrumbs"
+            Description="El motivo define si el ajuste suma o resta existencias. Las salidas consumen primero los lotes más antiguos." />
+
+@if (_loadError is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar los datos" Message="@_loadError" OnRetry="LoadAsync" /></div>
+}
+else if (_catalogs is null)
+{
+    <div class="panel"><LoadingState Rows="5" /></div>
+}
+else
+{
+    <EditForm Model="_header" OnValidSubmit="SubmitAsync" OnInvalidSubmit="OnInvalidSubmitAsync">
+        <DataAnnotationsValidator />
+        <div class="layout-stack">
+            <div class="panel">
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+                <fieldset disabled="@_saving" class="form-fieldset">
+                    <div class="form-grid">
+                        <MudSelect T="int?" @bind-Value="_header.ReasonId" For="@(() => _header.ReasonId)" Label="Motivo *"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (AdjustmentReasonResponse reason in _catalogs.AdjustmentReasons)
+                            {
+                                <MudSelectItem T="int?" Value="reason.Id">@reason.Name (@(reason.Nature > 0 ? "suma" : "resta"))</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudSelect T="int?" @bind-Value="_header.WarehouseId" Label="Almacén *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (CatalogOptionResponse warehouse in _catalogs.Warehouses)
+                            {
+                                <MudSelectItem T="int?" Value="warehouse.Id">@warehouse.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </div>
+                    <MudTextField @bind-Value="_header.Notes" For="@(() => _header.Notes)"
+                                  Label="@(SelectedReason?.RequiresNotes == true ? "Observaciones *" : "Observaciones")"
+                                  HelperText="Explique el ajuste (por ejemplo, resultado del conteo físico)."
+                                  Lines="2" Counter="1000" MaxLength="1000" Class="mt-3 tl-filter-plain"
+                                  Error="@(_submitted && NotesError is not null)" ErrorText="@NotesError"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    @if (SelectedReason is { } selected)
+                    {
+                        <MudAlert Severity="@(selected.Nature > 0 ? Severity.Info : Severity.Warning)" Dense="true" Class="mt-3">
+                            @(selected.Nature > 0
+                                ? "Este ajuste suma unidades: se crea un lote con el costo indicado o con el último costo del libro."
+                                : "Este ajuste resta unidades: no puede superar la existencia libre del libro.")
+                        </MudAlert>
+                    }
+                </fieldset>
+            </div>
+
+            <Panel Title="Libros" Icon="@Icons.Material.Outlined.MenuBook">
+                <div class="doc-add-line">
+                    <MudAutocomplete @ref="_bookSearch" T="BookOption" Label="Agregar libro" Value="_bookToAdd" ValueChanged="AddBook"
+                                     SearchFunc="SearchBooksAsync" ToStringFunc="@(item => item?.Title)"
+                                     Placeholder="Buscar por título, código o ISBN" DebounceInterval="300" MinCharacters="2"
+                                     ResetValueOnEmptyText="true" CoerceText="false" Dense="true" Disabled="_saving"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain">
+                        <ItemTemplate Context="book">
+                            <div class="cell-primary">@book.Title</div>
+                            <div class="cell-secondary">@book.Code @(book.Isbn is null ? "" : $"· {book.Isbn}")</div>
+                        </ItemTemplate>
+                    </MudAutocomplete>
+                </div>
+
+                @if (_lines.Count == 0)
+                {
+                    <EmptyState Icon="@Icons.Material.Outlined.MenuBook" Title="Sin libros"
+                                Message="@(_submitted ? "Agregue al menos un libro al ajuste." : "Busque y agregue los libros a ajustar.")" />
+                }
+                else
+                {
+                    <div class="table-scroll">
+                        <MudSimpleTable Dense="true" Elevation="0" Class="tl-table doc-lines">
+                            <thead>
+                                <tr>
+                                    <th>Libro</th>
+                                    <th class="doc-lines__qty">Cantidad *</th>
+                                    @if (IsPositive)
+                                    {
+                                        <th class="doc-lines__money">Costo unit.</th>
+                                    }
+                                    <th class="tl-table__actions"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (LineRow line in _lines)
+                                {
+                                    <tr @key="line.Book.Id">
+                                        <td class="doc-lines__title">
+                                            <div class="cell-primary">@line.Book.Title</div>
+                                            <div class="cell-secondary">@line.Book.Code</div>
+                                            @if (_submitted && line.Error is { } error)
+                                            {
+                                                <div class="field-error">@error</div>
+                                            }
+                                        </td>
+                                        <td>
+                                            <MudNumericField T="int?" @bind-Value="line.Quantity" Min="1" Max="100000" Immediate="true"
+                                                             Error="@(_submitted && line.Error is not null)"
+                                                             Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Cantidad de {line.Book.Title}")" />
+                                        </td>
+                                        @if (IsPositive)
+                                        {
+                                            <td>
+                                                <MudNumericField T="decimal?" @bind-Value="line.UnitCost" Min="0m" Max="999999.99m" Format="N2"
+                                                                 HideSpinButtons="true" Placeholder="Último costo" Immediate="true"
+                                                                 Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Costo de {line.Book.Title}")" />
+                                            </td>
+                                        }
+                                        <td class="tl-table__actions">
+                                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error"
+                                                           aria-label="@($"Quitar {line.Book.Title}")" OnClick="() => _lines.Remove(line)" Disabled="_saving" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+                }
+
+                <div class="form-actions">
+                    <MudButton Href="/inventario/ajustes" Variant="Variant.Text" Disabled="_saving">Cancelar</MudButton>
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Save" Disabled="_saving">
+                        @(_saving ? "Registrando…" : "Registrar ajuste")
+                    </MudButton>
+                </div>
+            </Panel>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "libro")]
+    public int? BookFromQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "almacen")]
+    public int? WarehouseFromQuery { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Ajustes", "/inventario/ajustes"),
+        new("Nuevo", null, disabled: true)
+    ];
+
+    private InventoryCatalogsResponse? _catalogs;
+    private readonly HeaderModel _header = new();
+    private readonly List<LineRow> _lines = [];
+    private MudAutocomplete<BookOption>? _bookSearch;
+    private BookOption? _bookToAdd;
+    private string? _loadError;
+    private bool _saving;
+    private bool _submitted;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    private AdjustmentReasonResponse? SelectedReason => _catalogs?.AdjustmentReasons.FirstOrDefault(item => item.Id == _header.ReasonId);
+
+    private bool IsPositive => SelectedReason?.Nature > 0;
+
+    private string? NotesError =>
+        SelectedReason?.RequiresNotes == true && (_header.Notes?.Trim().Length ?? 0) < 5
+            ? "Este motivo requiere observaciones (mínimo 5 caracteres)."
+            : null;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        ApiResult<InventoryCatalogsResponse> catalogs = await InventoryApi.GetCatalogsAsync();
+
+        if (!catalogs.Succeeded)
+        {
+            _loadError = catalogs.Message;
+            return;
+        }
+
+        _catalogs = catalogs.Data!;
+        _header.WarehouseId = WarehouseFromQuery ?? _catalogs.Warehouses.FirstOrDefault()?.Id;
+
+        if (BookFromQuery is int bookId)
+        {
+            ApiResult<PagedResponse<StockItemResponse>> stock = await InventoryApi.GetStockAsync(new StockQuery { WarehouseId = _header.WarehouseId, PageSize = 100 });
+            StockItemResponse? item = stock.Data?.Items.FirstOrDefault(row => row.BookId == bookId);
+
+            if (item is not null)
+            {
+                _lines.Add(new LineRow { Book = new BookOption(item.BookId, item.BookCode, item.Title, item.Isbn), Quantity = 1 });
+            }
+        }
+    }
+
+    private async Task<IEnumerable<BookOption>> SearchBooksAsync(string? text, CancellationToken token) =>
+        (await BookLookup.SearchAsync(text, token)).Where(book => _lines.All(line => line.Book.Id != book.Id));
+
+    private async Task AddBook(BookOption? book)
+    {
+        if (book is null || _lines.Any(line => line.Book.Id == book.Id))
+        {
+            return;
+        }
+
+        if (_lines.Count >= SaveAdjustmentRequest.MaxLines)
+        {
+            Snackbar.Add($"El ajuste admite como máximo {SaveAdjustmentRequest.MaxLines} libros.", Severity.Warning);
+            return;
+        }
+
+        _lines.Add(new LineRow { Book = book, Quantity = 1 });
+        _bookToAdd = null;
+
+        if (_bookSearch is not null)
+        {
+            await _bookSearch.ClearAsync();
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _submitted = true;
+
+        if (_header.ReasonId is null || _lines.Count == 0 || NotesError is not null || _lines.Any(line => line.Error is not null))
+        {
+            await OnInvalidSubmitAsync();
+            return;
+        }
+
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<AdjustmentResponse> result = await InventoryApi.CreateAdjustmentAsync(new SaveAdjustmentRequest
+            {
+                ReasonId = _header.ReasonId,
+                WarehouseId = _header.WarehouseId,
+                Notes = _header.Notes,
+                Lines = _lines
+                    .Select(line => new AdjustmentLineRequest
+                    {
+                        BookId = line.Book.Id,
+                        Quantity = line.Quantity,
+                        UnitCost = IsPositive ? line.UnitCost : null
+                    })
+                    .ToList()
+            });
+
+            if (!result.Succeeded)
+            {
+                _saveResult = result;
+                return;
+            }
+
+            Snackbar.Add($"Ajuste {result.Data!.Number} registrado; las existencias fueron actualizadas.", Severity.Success);
+            Navigation.NavigateTo($"/inventario/ajustes/{result.Data.Id}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task OnInvalidSubmitAsync()
+    {
+        _submitted = true;
+        _showInvalid = true;
+        _saveResult = null;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("tikalLibros.scrollToFirstError");
+    }
+
+    private sealed class HeaderModel
+    {
+        [Required(ErrorMessage = "Seleccione el motivo del ajuste.")]
+        public int? ReasonId { get; set; }
+
+        public int? WarehouseId { get; set; }
+
+        [StringLength(1000, ErrorMessage = "Las observaciones no pueden superar los 1000 caracteres.")]
+        [PlainText]
+        public string? Notes { get; set; }
+    }
+
+    private sealed class LineRow
+    {
+        public BookOption Book { get; init; } = default!;
+
+        public int? Quantity { get; set; }
+
+        public decimal? UnitCost { get; set; }
+
+        public string? Error =>
+            Quantity is null or < 1 or > 100000 ? "La cantidad debe ser un entero entre 1 y 100,000."
+            : UnitCost is { } cost && decimal.Round(cost, 2) != cost ? "El costo admite como máximo 2 decimales."
+            : null;
+    }
+}

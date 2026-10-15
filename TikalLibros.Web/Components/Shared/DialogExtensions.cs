@@ -78,4 +78,27 @@ public static class DialogExtensions
 
         return result is { Canceled: false, Data: TResult data } ? data : default;
     }
+
+    /// <summary>
+    /// Pide un motivo obligatorio; devuelve null si el usuario cancela.
+    /// </summary>
+    public static async Task<string?> AskReasonAsync(
+        this IDialogService dialogs,
+        string title,
+        string message,
+        string confirmText,
+        string label = "Motivo *")
+    {
+        DialogParameters<ReasonDialog> parameters = new()
+        {
+            { dialog => dialog.Message, message },
+            { dialog => dialog.ConfirmText, confirmText },
+            { dialog => dialog.Label, label }
+        };
+
+        IDialogReference reference = await dialogs.ShowAsync<ReasonDialog>(title, parameters, FormOptions);
+        DialogResult? result = await reference.Result;
+
+        return result is { Canceled: false, Data: string reason } ? reason : null;
+    }
 }

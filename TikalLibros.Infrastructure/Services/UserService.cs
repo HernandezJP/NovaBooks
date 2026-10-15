@@ -314,7 +314,7 @@ public sealed class UserService : IUserService
             {
                 return OperationResult<UserResponse>.Conflict(
                     "No se puede activar el usuario porque su empleado " +
-                    "estÃ¡ inactivo. Active primero al empleado o desvincÃºlelo.");
+                    "está inactivo. Active primero al empleado o desvincúlelo.");
             }
         }
 
@@ -703,7 +703,7 @@ public sealed class UserService : IUserService
         if (!employee.EMP_Activo)
         {
             return OperationResult<UserResponse>.Conflict(
-                $"El empleado {employee.EMP_Codigo} estÃ¡ inactivo.");
+                $"El empleado {employee.EMP_Codigo} está inactivo.");
         }
 
         string? linkedUser = await _context.Users

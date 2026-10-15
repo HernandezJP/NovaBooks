@@ -1,0 +1,123 @@
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Inventory
+@inject InventoryApi InventoryApi
+@inject BookLookup BookLookup
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="() => _showInvalid = true" id="levels-form">
+            <DataAnnotationsValidator />
+            <ServerValidator Result="_saveResult" />
+            <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+
+            @if (Stock is null)
+            {
+                <div class="form-grid">
+                    <MudAutocomplete T="BookOption" Label="Libro *" Value="_book" ValueChanged="book => { _book = book; _model.BookId = book?.Id; }"
+                                     SearchFunc="BookLookup.SearchAsync" ToStringFunc="@(item => item?.Title)"
+                                     DebounceInterval="300" MinCharacters="2" ResetValueOnEmptyText="true" Dense="true"
+                                     Error="@(_showInvalid && _model.BookId is null)" ErrorText="Seleccione el libro."
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain">
+                        <ItemTemplate Context="book">
+                            <div class="cell-primary">@book.Title</div>
+                            <div class="cell-secondary">@book.Code @(book.Isbn is null ? "" : $"· {book.Isbn}")</div>
+                        </ItemTemplate>
+                    </MudAutocomplete>
+                    <MudSelect T="int?" @bind-Value="_model.WarehouseId" Label="Almacén *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (CatalogOptionResponse warehouse in Warehouses)
+                        {
+                            <MudSelectItem T="int?" Value="warehouse.Id">@warehouse.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Class="mb-3">
+                    <strong>@Stock.Title</strong> · @Stock.Warehouse · existencia actual @Stock.Available.ToString("N0")
+                </MudText>
+            }
+
+            <div class="form-grid">
+                <MudNumericField T="int" @bind-Value="_model.Minimum" For="@(() => _model.Minimum)" Label="Mínimo"
+                                 Min="0" Max="100000" HelperText="Alerta cuando la existencia llegue a este nivel."
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudNumericField T="int" @bind-Value="_model.Maximum" For="@(() => _model.Maximum)" Label="Máximo"
+                                 Min="0" Max="100000" HelperText="0 = sin máximo. Si se indica, debe ser ≥ mínimo."
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_model.Location" For="@(() => _model.Location)" Label="Ubicación"
+                              MaxLength="100" Class="tl-filter-location" HelperText="Ej.: Estante A-3 / Pasillo #2"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" form="levels-form" Disabled="_saving">
+            @(_saving ? "Guardando…" : "Guardar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Existencia a configurar; null para elegir libro y almacén.</summary>
+    [Parameter]
+    public StockItemResponse? Stock { get; set; }
+
+    [Parameter]
+    public IReadOnlyCollection<CatalogOptionResponse> Warehouses { get; set; } = [];
+
+    private readonly SaveStockLevelsRequest _model = new();
+    private BookOption? _book;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    protected override void OnInitialized()
+    {
+        if (Stock is not null)
+        {
+            _model.WarehouseId = Stock.WarehouseId;
+            _model.BookId = Stock.BookId;
+            _model.Minimum = (int)Stock.Minimum;
+            _model.Maximum = (int)Stock.Maximum;
+            _model.Location = Stock.Location;
+        }
+        else
+        {
+            _model.WarehouseId = Warehouses.FirstOrDefault()?.Id;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving || _model.BookId is null)
+        {
+            _showInvalid = true;
+            return;
+        }
+
+        _saving = true;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<StockItemResponse> result = await InventoryApi.SaveLevelsAsync(_model);
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

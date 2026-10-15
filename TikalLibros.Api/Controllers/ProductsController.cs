@@ -278,7 +278,7 @@ public sealed class ProductsController : ControllerBase
     private ObjectResult PricingForbidden()
     {
         return this.ForbiddenProblem(
-            "Se requiere el permiso Catalogo.AdministrarPrecios " +
+            "Se requiere el permiso Catálogo › Administrar precios " +
             "para enviar precios o costo de referencia.");
     }
 

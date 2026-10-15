@@ -14,33 +14,29 @@
                 <div class="form-grid">
                     <MudTextField @bind-Value="_model.FirstName" For="@(() => _model.FirstName)" Label="Primer nombre *"
                                   Variant="Variant.Outlined" Margin="Margin.Dense"
-                                  MaxLength="100" />
+                                  MaxLength="100" Class="tl-filter-name" />
                     <MudTextField @bind-Value="_model.MiddleName" For="@(() => _model.MiddleName)" Label="Segundo nombre"
-                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" Class="tl-filter-name" />
                     <MudTextField @bind-Value="_model.LastName" For="@(() => _model.LastName)" Label="Primer apellido *"
-                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" Class="tl-filter-name" />
                     <MudTextField @bind-Value="_model.SecondLastName" For="@(() => _model.SecondLastName)" Label="Segundo apellido"
-                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" />
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="100" Class="tl-filter-name" />
                     <MudTextField @bind-Value="_model.Pseudonym" For="@(() => _model.Pseudonym)" Label="Seudónimo"
                                   HelperText="Si lo tiene, se mostrará en lugar del nombre."
-                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150" />
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150" Class="tl-filter-name" />
                 </div>
             </div>
 
             <div class="form-section">
                 <div class="form-section__title">Datos biográficos</div>
                 <div class="form-grid">
-                    <MudDatePicker @bind-Date="BirthDate" Label="Fecha de nacimiento" Editable="true"
-                                   DateFormat="dd/MM/yyyy" MaxDate="DateTime.Today"
-                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
-                    <MudDatePicker @bind-Date="DeathDate" Label="Fecha de fallecimiento" Editable="true"
-                                   DateFormat="dd/MM/yyyy" MaxDate="DateTime.Today"
-                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <DateField @bind-Value="BirthDate" Label="Fecha de nacimiento" MaxDate="DateTime.Today" />
+                    <DateField @bind-Value="DeathDate" Label="Fecha de fallecimiento" MaxDate="DateTime.Today" />
                 </div>
                 <ValidationMessage For="@(() => _model.DeathDate)" class="field-error" />
                 <MudTextField @bind-Value="_model.Biography" For="@(() => _model.Biography)" Label="Biografía"
                               Lines="4" Counter="4000" MaxLength="4000" Variant="Variant.Outlined" Margin="Margin.Dense"
-                              Class="mt-3" />
+                              Class="tl-filter-plain mt-3" />
             </div>
         </EditForm>
     </DialogContent>

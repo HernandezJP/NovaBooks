@@ -24,13 +24,13 @@
         <MudNavMenu Class="tl-nav">
             @foreach (var group in Menu.Groups)
             {
-                @* Los módulos de operación se muestran como lista plana; la
-                   configuración se agrupa en un desplegable. *@
-                @if (group.Key == ConfigurationGroup && !Collapsed)
+                @* Catálogo y personas se muestran como lista plana; compras,
+                   inventario y configuración se agrupan en desplegables. *@
+                @if (CollapsibleGroups.ContainsKey(group.Key) && !Collapsed)
                 {
-                    <MudNavGroup Title="@group.Title" Icon="@Icons.Material.Outlined.Settings"
-                                 Expanded="_configurationExpanded"
-                                 ExpandedChanged="value => _configurationExpanded = value">
+                    <MudNavGroup Title="@group.Title" Icon="@CollapsibleGroups[group.Key].Icon"
+                                 Expanded="_expanded.Contains(group.Key)"
+                                 ExpandedChanged="value => Toggle(group.Key, value)">
                         @foreach (var item in group.Items)
                         {
                             @NavLink(item)
@@ -59,7 +59,13 @@
 </nav>
 
 @code {
-    private const string ConfigurationGroup = "configuracion";
+    /// <summary>Grupos desplegables con su ícono y las rutas que los abren.</summary>
+    private static readonly Dictionary<string, (string Icon, string[] Paths)> CollapsibleGroups = new()
+    {
+        ["compras"] = (Icons.Material.Outlined.ShoppingCart, ["/compras", "/recepciones"]),
+        ["inventario"] = (Icons.Material.Outlined.Inventory2, ["/inventario"]),
+        ["configuracion"] = (Icons.Material.Outlined.Settings, ["/usuarios", "/roles", "/permisos"])
+    };
 
     /// <summary>Menú contraído a solo íconos (escritorio).</summary>
     [Parameter]
@@ -68,7 +74,7 @@
     [Parameter]
     public EventCallback OnNavigate { get; set; }
 
-    private bool _configurationExpanded;
+    private readonly HashSet<string> _expanded = [];
 
     private RenderFragment NavLink(TikalLibros.Application.DTOs.Menu.MenuItemResponse item) => __builder =>
     {
@@ -83,19 +89,28 @@
     protected override void OnInitialized()
     {
         Menu.Changed += OnMenuChanged;
-        _configurationExpanded = IsInConfiguration();
-    }
-
-    /// <summary>
-    /// Abre "Configuración" si la página actual pertenece a ese grupo.
-    /// </summary>
-    private bool IsInConfiguration()
-    {
         string path = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0];
 
-        return path.StartsWith("/usuarios", StringComparison.OrdinalIgnoreCase) ||
-               path.StartsWith("/roles", StringComparison.OrdinalIgnoreCase) ||
-               path.StartsWith("/permisos", StringComparison.OrdinalIgnoreCase);
+        // Abre el grupo al que pertenece la página actual.
+        foreach ((string key, (string _, string[] paths)) in CollapsibleGroups)
+        {
+            if (paths.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                _expanded.Add(key);
+            }
+        }
+    }
+
+    private void Toggle(string key, bool expanded)
+    {
+        if (expanded)
+        {
+            _expanded.Add(key);
+        }
+        else
+        {
+            _expanded.Remove(key);
+        }
     }
 
     public void Dispose()

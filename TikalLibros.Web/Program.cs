@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.Extensions.Options;
 using MudBlazor;
@@ -49,11 +50,30 @@ builder.Services.AddScoped<CustomersApi>();
 builder.Services.AddScoped<ProductsApi>();
 builder.Services.AddScoped<AuthorsApi>();
 builder.Services.AddScoped<EditorialsApi>();
+builder.Services.AddScoped<EmployeesApi>();
+builder.Services.AddScoped<SuppliersApi>();
+builder.Services.AddScoped<PurchasesApi>();
+builder.Services.AddScoped<ReceptionsApi>();
+builder.Services.AddScoped<InventoryApi>();
+builder.Services.AddScoped<BookLookup>();
+
+
 builder.Services.AddScoped<AuthenticationStateProvider, TikalAuthenticationStateProvider>();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorizationCore();
 
 var app = builder.Build();
+
+// Toda la interfaz en español de Guatemala: meses y días de los calendarios,
+// y montos con coma de miles y punto decimal (1,234.56).
+CultureInfo spanish = CultureInfo.GetCultureInfo("es-GT");
+CultureInfo.DefaultThreadCurrentCulture = spanish;
+CultureInfo.DefaultThreadCurrentUICulture = spanish;
+app.UseRequestLocalization(new RequestLocalizationOptions()
+    .SetDefaultCulture("es-GT")
+    .AddSupportedCultures("es-GT")
+    .AddSupportedUICultures("es-GT"));
+
 
 if (!app.Environment.IsDevelopment())
 {

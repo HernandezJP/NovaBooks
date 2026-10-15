@@ -46,7 +46,7 @@
                           Adornment="Adornment.Start"
                           AdornmentIcon="@Icons.Material.Outlined.Person"
                           UserAttributes="@(new Dictionary<string, object?> { ["autocomplete"] = "username", ["id"] = "login-user" })"
-                          Class="mb-4" />
+                          Class="mb-4 tl-filter-email" />
 
             <label class="login__label" for="login-password">Contraseña</label>
             <MudTextField @bind-Value="_model.Password"

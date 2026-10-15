@@ -27,10 +27,10 @@
 
             @if (Session.HasPermission(AppPermissions.CatalogView))
             {
-                <form class="app-search" role="search" @onsubmit="SearchBooks" @onsubmit:preventDefault="true">
+                <form class="app-search tl-filter-plain" role="search" @onsubmit="SearchBooks" @onsubmit:preventDefault="true">
                     <MudIcon Icon="@Icons.Material.Outlined.Search" Size="Size.Small" Class="app-search__icon" />
                     <input type="search" @bind="_search" @bind:event="oninput" placeholder="Buscar libros, autores o ISBN…"
-                           aria-label="Buscar libros" class="app-search__input" />
+                           aria-label="Buscar libros" class="app-search__input" maxlength="100" />
                 </form>
             }
 

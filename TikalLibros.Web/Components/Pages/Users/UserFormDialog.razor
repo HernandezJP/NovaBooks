@@ -15,13 +15,14 @@
                 <div class="form-section__title">Datos de acceso</div>
                 <div class="form-grid">
                     <MudTextField @bind-Value="_model.UserName" For="@(() => _model.UserName)"
-                                  Label="Nombre de usuario *" HelperText="Identificador para iniciar sesión."
+                                  Label="Nombre de usuario *" HelperText="Letras sin tildes, números, punto, guion o guion bajo."
+                                  MaxLength="100" Class="tl-filter-username"
                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
                     <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)"
                                   Label="Correo electrónico *" InputType="InputType.Email"
-                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-email" />
                     <MudTextField @bind-Value="_model.PhoneNumber" For="@(() => _model.PhoneNumber)"
-                                  Label="Teléfono" InputType="InputType.Telephone"
+                                  Label="Teléfono" InputType="InputType.Telephone" MaxLength="30" Class="tl-filter-phone"
                                   Variant="Variant.Outlined" Margin="Margin.Dense" />
                     @if (IsCreate)
                     {
@@ -202,6 +203,7 @@
         [Required(ErrorMessage = "El nombre de usuario es obligatorio.")]
         [StringLength(100, MinimumLength = 3,
             ErrorMessage = "El nombre de usuario debe contener entre 3 y 100 caracteres.")]
+        [TikalLibros.Application.Validation.UserName]
         public string UserName { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "El correo electrónico es obligatorio.")]

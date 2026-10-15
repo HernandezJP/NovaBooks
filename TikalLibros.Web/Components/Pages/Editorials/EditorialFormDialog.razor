@@ -11,18 +11,18 @@
 
             <div class="form-grid">
                 <MudTextField @bind-Value="_model.Name" For="@(() => _model.Name)" Label="Nombre *"
-                              Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+                              Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" Class="tl-filter-business" />
                 <MudTextField T="string" Value="@(Editorial?.Code ?? "Se asignará al guardar")" Label="Código"
                               HelperText="Lo asigna el sistema automáticamente."
                               ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
                 <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)" Label="Correo electrónico"
-                              InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                              InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-email" />
                 <MudTextField @bind-Value="_model.Phone" For="@(() => _model.Phone)" Label="Teléfono"
-                              InputType="InputType.Telephone" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                              InputType="InputType.Telephone" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-phone" />
             </div>
             <MudTextField @bind-Value="_model.Website" For="@(() => _model.Website)" Label="Sitio web"
                           Placeholder="https://" InputType="InputType.Url"
-                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" />
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-url mt-2" />
         </EditForm>
     </DialogContent>
     <DialogActions>

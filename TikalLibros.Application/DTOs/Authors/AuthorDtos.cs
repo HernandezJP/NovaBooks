@@ -52,6 +52,7 @@ public sealed class SaveAuthorRequest : IValidatableObject
     public string? SecondLastName { get; set; }
 
     [StringLength(150, ErrorMessage = "El seudónimo no puede superar los 150 caracteres.")]
+    [PersonName("seudónimo")]
     public string? Pseudonym { get; set; }
 
     public DateOnly? BirthDate { get; set; }
@@ -59,6 +60,7 @@ public sealed class SaveAuthorRequest : IValidatableObject
     public DateOnly? DeathDate { get; set; }
 
     [StringLength(4000, ErrorMessage = "La biografía no puede superar los 4000 caracteres.")]
+    [PlainText]
     public string? Biography { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)

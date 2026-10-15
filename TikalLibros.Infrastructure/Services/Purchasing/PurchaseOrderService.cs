@@ -486,7 +486,7 @@ public sealed class PurchaseOrderService : IPurchaseOrderService
 
     /// <summary>
     /// Crea una orden ya emitida para una compra directa. Debe llamarse
-    /// dentro de la transacciÃ³n de quien registra la recepciÃ³n.
+    /// dentro de la transacción de quien registra la recepción.
     /// </summary>
     internal async Task<OperationResult<PB_ORDEN_COMPRA>> CreateIssuedAsync(
         SavePurchaseOrderRequest request,

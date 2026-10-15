@@ -26,6 +26,7 @@ public sealed class SaveEditorialRequest
 {
     [Required(ErrorMessage = "El nombre es obligatorio.")]
     [StringLength(200, ErrorMessage = "El nombre no puede superar los 200 caracteres.")]
+    [BusinessName("nombre", ErrorMessage = "El nombre solo admite letras, números, espacios y los signos . , & ' - ( ) /.")]
     public string Name { get; set; } = string.Empty;
 
     [Url(ErrorMessage = "El sitio web debe ser una dirección válida (https://...).")]

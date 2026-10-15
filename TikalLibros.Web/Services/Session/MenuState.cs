@@ -53,6 +53,15 @@ public sealed class MenuState : IDisposable
             "authors" => Icons.Material.Outlined.HistoryEdu,
             "publishers" => Icons.Material.Outlined.AccountBalance,
             "customers" => Icons.Material.Outlined.Badge,
+            "suppliers" => Icons.Material.Outlined.LocalShipping,
+            "employees" => Icons.Material.Outlined.Engineering,
+            "purchases" => Icons.Material.Outlined.ShoppingCart,
+            "receptions" => Icons.Material.Outlined.MoveToInbox,
+            "stock" => Icons.Material.Outlined.Inventory2,
+            "alerts" => Icons.Material.Outlined.NotificationImportant,
+            "movements" => Icons.Material.Outlined.SwapVert,
+            "adjustments" => Icons.Material.Outlined.Tune,
+
             _ => Icons.Material.Outlined.Circle
         };
     }

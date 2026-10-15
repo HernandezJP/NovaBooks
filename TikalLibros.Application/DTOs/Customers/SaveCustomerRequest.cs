@@ -17,25 +17,31 @@ public sealed class SaveCustomerRequest : IValidatableObject
 
     [StringLength(100, ErrorMessage = "El primer nombre no puede superar los 100 caracteres.")]
     [RequiredWhen(nameof(PersonType), "El primer nombre es obligatorio.", Value = NaturalPerson)]
+    [PersonName("primer nombre")]
     public string? FirstName { get; set; }
 
     [StringLength(100, ErrorMessage = "El segundo nombre no puede superar los 100 caracteres.")]
+    [PersonName("segundo nombre")]
     public string? MiddleName { get; set; }
 
     [StringLength(100, ErrorMessage = "El primer apellido no puede superar los 100 caracteres.")]
     [RequiredWhen(nameof(PersonType), "El primer apellido es obligatorio.", Value = NaturalPerson)]
+    [PersonName("primer apellido")]
     public string? LastName { get; set; }
 
     [StringLength(100, ErrorMessage = "El segundo apellido no puede superar los 100 caracteres.")]
+    [PersonName("segundo apellido")]
     public string? SecondLastName { get; set; }
 
     public DateOnly? BirthDate { get; set; }
 
     [StringLength(250, ErrorMessage = "La razón social no puede superar los 250 caracteres.")]
     [RequiredWhen(nameof(PersonType), "La razón social es obligatoria.", Value = LegalPerson)]
+    [BusinessName("razón social")]
     public string? LegalName { get; set; }
 
     [StringLength(250, ErrorMessage = "El nombre comercial no puede superar los 250 caracteres.")]
+    [BusinessName("nombre comercial", ErrorMessage = "El nombre comercial solo admite letras, números, espacios y los signos . , & ' - ( ) /.")]
     public string? TradeName { get; set; }
 
     /// <summary>
@@ -44,6 +50,7 @@ public sealed class SaveCustomerRequest : IValidatableObject
     public int? IdentificationTypeId { get; set; }
 
     [StringLength(50, ErrorMessage = "La identificación no puede superar los 50 caracteres.")]
+    [RegularExpression("^[A-Za-z0-9 -]+$", ErrorMessage = "La identificación solo admite letras sin tilde, números, espacios y guion.")]
     public string? IdentificationNumber { get; set; }
 
     [StringLength(20, ErrorMessage = "El NIT no puede superar los 20 caracteres.")]
@@ -74,6 +81,7 @@ public sealed class SaveCustomerRequest : IValidatableObject
     public int CreditDays { get; set; }
 
     [StringLength(1000, ErrorMessage = "Las observaciones no pueden superar los 1000 caracteres.")]
+    [PlainText]
     public string? Notes { get; set; }
 
     public IEnumerable<ValidationResult> Validate(

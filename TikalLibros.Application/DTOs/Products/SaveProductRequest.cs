@@ -18,13 +18,16 @@ public sealed class SaveProductRequest : IValidatableObject
     public string? Isbn13 { get; set; }
 
     [StringLength(50, ErrorMessage = "El código de barras no puede superar los 50 caracteres.")]
+    [RegularExpression("^[A-Za-z0-9-]+$", ErrorMessage = "El código de barras solo admite letras sin tilde, números y guion.")]
     public string? Barcode { get; set; }
 
     [Required(ErrorMessage = "El título es obligatorio.")]
     [StringLength(250, ErrorMessage = "El título no puede superar los 250 caracteres.")]
+    [PlainText]
     public string Title { get; set; } = string.Empty;
 
     [StringLength(250, ErrorMessage = "El subtítulo no puede superar los 250 caracteres.")]
+    [PlainText]
     public string? Subtitle { get; set; }
 
     public int? EditorialId { get; set; }
@@ -39,6 +42,7 @@ public sealed class SaveProductRequest : IValidatableObject
     public int? TaxId { get; set; }
 
     [StringLength(50, ErrorMessage = "La edición no puede superar los 50 caracteres.")]
+    [PlainText]
     public string? Edition { get; set; }
 
     [Range(1000, 9999, ErrorMessage = "El año de publicación no es válido.")]
@@ -48,6 +52,7 @@ public sealed class SaveProductRequest : IValidatableObject
     public int? PageCount { get; set; }
 
     [StringLength(4000, ErrorMessage = "La descripción no puede superar los 4000 caracteres.")]
+    [PlainText]
     public string? Description { get; set; }
 
     public bool AllowsSale { get; set; } = true;

@@ -4,6 +4,8 @@
 @inject CustomersApi CustomersApi
 @inject ProductsApi ProductsApi
 @inject AuthorsApi AuthorsApi
+@inject PurchasesApi PurchasesApi
+@inject InventoryApi InventoryApi
 
 <PageTitle>Inicio | Tikal Libros</PageTitle>
 
@@ -100,6 +102,23 @@
                     ? r.Data!.TotalItems : null));
         }
 
+        if (Session.HasPermission(AppPermissions.PurchasesView))
+        {
+            _stats.Add(new Stat("sky", Icons.Material.Outlined.LocalShipping, "Órdenes por recibir", "/compras?estado=EMITIDA",
+                async () =>
+                {
+                    var issued = await PurchasesApi.GetPagedAsync(new() { Status = "EMITIDA", PageSize = 1 });
+                    var partial = await PurchasesApi.GetPagedAsync(new() { Status = "PARCIAL", PageSize = 1 });
+                    return issued.Succeeded && partial.Succeeded ? issued.Data!.TotalItems + partial.Data!.TotalItems : null;
+                }));
+        }
+
+        if (Session.HasPermission(AppPermissions.InventoryView))
+        {
+            _stats.Add(new Stat("peach", Icons.Material.Outlined.NotificationImportant, "Alertas de inventario", "/inventario/alertas",
+                async () => await InventoryApi.GetAlertSummaryAsync() is { Succeeded: true } r ? r.Data!.Total : null));
+        }
+
         if (Session.HasPermission(AppPermissions.UsersView))
         {
             _stats.Add(new Stat("sand", Icons.Material.Outlined.Badge, "Usuarios activos", "/usuarios",
@@ -111,6 +130,12 @@
             "Agregue un título al catálogo con su ISBN y precio.", "/productos/nuevo");
         AddShortcut(AppPermissions.CustomersCreate, Icons.Material.Outlined.PersonAdd, "Registrar cliente",
             "Alta de persona natural o jurídica con su NIT.", "/clientes/nuevo");
+        AddShortcut(AppPermissions.PurchasesCreate, Icons.Material.Outlined.AddShoppingCart, "Nueva orden de compra",
+            "Pida libros a un proveedor y emita la orden.", "/compras/nueva");
+        AddShortcut(AppPermissions.PurchasesReceive, Icons.Material.Outlined.MoveToInbox, "Recibir mercadería",
+            "Registre lo que llegó de una orden emitida; actualiza el inventario.", "/compras?estado=EMITIDA");
+        AddShortcut(AppPermissions.InventoryView, Icons.Material.Outlined.Inventory2, "Existencias",
+            "Consulte unidades, mínimos, máximos y alertas.", "/inventario/existencias");
         AddShortcut(AppPermissions.CatalogView, Icons.Material.Outlined.HistoryEdu, "Autores",
             "Consulte y registre los autores del catálogo.", "/autores");
         AddShortcut(AppPermissions.UsersView, Icons.Material.Outlined.ManageAccounts, "Usuarios del sistema",

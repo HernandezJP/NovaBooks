@@ -163,7 +163,7 @@ public sealed class RequiredWhenAttribute : ValidationAttribute
 
     /// <summary>
     /// Si se indica, el campo es obligatorio solo cuando la otra propiedad
-    /// tiene exactamente este valor (sin distinguir mayÃºsculas), por ejemplo
+    /// tiene exactamente este valor (sin distinguir mayúsculas), por ejemplo
     /// el tipo de persona "JURIDICA".
     /// </summary>
     public string? Value { get; set; }
@@ -202,14 +202,14 @@ public sealed class DpiAttribute : ValidationAttribute
 }
 
 /// <summary>
-/// Nombre de usuario: letras sin tildes, dÃ­gitos, punto, guion y guion
-/// bajo; empieza con letra o dÃ­gito. Sin espacios.
+/// Nombre de usuario: letras sin tildes, dígitos, punto, guion y guion
+/// bajo; empieza con letra o dígito. Sin espacios.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property)]
 public sealed partial class UserNameAttribute : ValidationAttribute
 {
     public UserNameAttribute()
-        : base("El nombre de usuario solo admite letras sin tildes, nÃºmeros, punto, guion y guion bajo, sin espacios.")
+        : base("El nombre de usuario solo admite letras sin tildes, números, punto, guion y guion bajo, sin espacios.")
     {
     }
 
@@ -223,15 +223,15 @@ public sealed partial class UserNameAttribute : ValidationAttribute
 }
 
 /// <summary>
-/// RazÃ³n social o nombre comercial: letras, dÃ­gitos, espacios y los signos
+/// Razón social o nombre comercial: letras, dígitos, espacios y los signos
 /// habituales en nombres de empresa (. , &amp; ' - ( ) /). Empieza con letra o
-/// dÃ­gito.
+/// dígito.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property)]
 public sealed partial class BusinessNameAttribute : ValidationAttribute
 {
     public BusinessNameAttribute(string fieldLabel)
-        : base($"La {fieldLabel} solo admite letras, nÃºmeros, espacios y los signos . , & ' - ( ) /.")
+        : base($"La {fieldLabel} solo admite letras, números, espacios y los signos . , & ' - ( ) /.")
     {
     }
 
@@ -244,7 +244,7 @@ public sealed partial class BusinessNameAttribute : ValidationAttribute
     private static partial System.Text.RegularExpressions.Regex BusinessNameRegex();
 }
 
-/// <summary>NÃºmero decimal con como mÃ¡ximo la cantidad de decimales indicada.</summary>
+/// <summary>Número decimal con como máximo la cantidad de decimales indicada.</summary>
 [AttributeUsage(AttributeTargets.Property)]
 public sealed class MaxDecimalsAttribute : ValidationAttribute
 {
@@ -262,8 +262,8 @@ public sealed class MaxDecimalsAttribute : ValidationAttribute
 }
 
 /// <summary>
-/// Texto libre (motivos, notas): admite letras, nÃºmeros y puntuaciÃ³n, pero
-/// no los signos &lt; &gt; ni caracteres de control (salvo saltos de lÃ­nea).
+/// Texto libre (motivos, notas): admite letras, números y puntuación, pero
+/// no los signos &lt; &gt; ni caracteres de control (salvo saltos de línea).
 /// </summary>
 [AttributeUsage(AttributeTargets.Property)]
 public sealed class PlainTextAttribute : ValidationAttribute
@@ -281,7 +281,7 @@ public sealed class PlainTextAttribute : ValidationAttribute
 }
 
 /// <summary>
-/// Valida los elementos de una lista y antepone "LÃ­nea N:" a cada mensaje;
+/// Valida los elementos de una lista y antepone "Línea N:" a cada mensaje;
 /// las claves quedan como "Lines[0].Campo", igual que en la API.
 /// </summary>
 public static class NestedValidation
@@ -302,7 +302,7 @@ public static class NestedValidation
             foreach (ValidationResult result in results)
             {
                 yield return new ValidationResult(
-                    $"LÃ­nea {index + 1}: {result.ErrorMessage}",
+                    $"Línea {index + 1}: {result.ErrorMessage}",
                     result.MemberNames.Select(member => $"{collectionName}[{index}].{member}").ToArray());
             }
         }

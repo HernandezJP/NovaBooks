@@ -1782,3 +1782,111 @@ body,
         display: none;
     }
 }
+
+/* ---------- Sprint 2: compras e inventario ---------- */
+
+/* Aviso breve cuando el filtro de teclado descarta un carácter. */
+.tl-filter-rejected .mud-input-outlined-border {
+    border-color: var(--mud-palette-warning) !important;
+    transition: border-color 0.1s;
+}
+
+.status-pill--danger {
+    color: #9B2C2C;
+    background: #FBE1DE;
+}
+
+.status-pill--neutral {
+    color: #4A5568;
+    background: #EDF0F4;
+}
+
+/* Líneas editables de documentos (orden, recepción, ajuste). */
+.doc-lines .mud-table-cell {
+    vertical-align: top;
+}
+
+.doc-lines .mud-input-control {
+    margin-top: 0;
+}
+
+.doc-lines__qty {
+    width: 110px;
+}
+
+.doc-lines__money {
+    width: 130px;
+}
+
+.doc-lines__title {
+    min-width: 220px;
+}
+
+.doc-totals {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: end;
+    gap: 4px 24px;
+    margin-top: 16px;
+    font-variant-numeric: tabular-nums;
+}
+
+.doc-totals dt {
+    color: var(--tl-color-text-muted);
+    text-align: right;
+}
+
+.doc-totals dd {
+    margin: 0;
+    text-align: right;
+    font-family: var(--tl-font-sans, inherit);
+}
+
+.doc-totals__grand {
+    font-weight: 700;
+    font-size: 1.05rem;
+    padding-top: 6px;
+    border-top: 1px solid var(--tl-color-border);
+}
+
+.doc-add-line {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.doc-add-line .mud-input-control {
+    flex: 1;
+}
+
+.number {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--tl-font-sans, inherit);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.qty-in {
+    color: #2F7A4F;
+    font-weight: 600;
+}
+
+.qty-out {
+    color: #9B2C2C;
+    font-weight: 600;
+}
+
+.row-muted td {
+    opacity: 0.55;
+    text-decoration: line-through;
+}
+
+.notes-block {
+    white-space: pre-line;
+    margin: 0;
+}
+
+.progress-cell {
+    min-width: 110px;
+}

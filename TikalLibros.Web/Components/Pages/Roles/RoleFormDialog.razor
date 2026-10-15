@@ -18,10 +18,10 @@
 
             <MudTextField @bind-Value="_model.Name" For="@(() => _model.Name)"
                           Label="Nombre del rol *" Variant="Variant.Outlined" Margin="Margin.Dense"
-                          Disabled="@(Role?.IsProtected == true)" Class="mb-3" />
+                          Disabled="@(Role?.IsProtected == true)" Class="tl-filter-business mb-3" />
 
             <MudTextField @bind-Value="_model.Description" For="@(() => _model.Description)"
-                          Label="Descripción" Counter="500" MaxLength="500" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                          Label="Descripción" Counter="500" MaxLength="500" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain" />
         </EditForm>
     </DialogContent>
     <DialogActions>

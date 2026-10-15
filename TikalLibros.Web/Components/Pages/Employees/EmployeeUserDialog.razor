@@ -1,0 +1,168 @@
+@using System.ComponentModel.DataAnnotations
+@using TikalLibros.Application.DTOs.Employees
+@using TikalLibros.Application.DTOs.Roles
+@using TikalLibros.Application.DTOs.Users
+@using TikalLibros.Application.Validation
+@inject EmployeesApi EmployeesApi
+@inject UsersApi UsersApi
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="() => _showInvalid = true" id="employee-user-form">
+            <DataAnnotationsValidator />
+            <ServerValidator Result="_saveResult" />
+            <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+            <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+            <div class="form-grid">
+                <MudTextField @bind-Value="_model.UserName" For="@(() => _model.UserName)" Label="Nombre de usuario *"
+                              HelperText="Letras sin tildes, números, punto, guion o guion bajo."
+                              MaxLength="100" Class="tl-filter-username"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)" Label="Correo electrónico *"
+                              InputType="InputType.Email" MaxLength="256"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-email" />
+                <MudTextField @bind-Value="_model.Password" For="@(() => _model.Password)" Label="Contraseña inicial *"
+                              HelperText="Mínimo 8 caracteres con mayúscula, minúscula, número y símbolo."
+                              InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@(_showPassword ? Icons.Material.Outlined.VisibilityOff : Icons.Material.Outlined.Visibility)"
+                              AdornmentAriaLabel="Mostrar u ocultar contraseña" OnAdornmentClick="() => _showPassword = !_showPassword"
+                              UserAttributes="@(new Dictionary<string, object?> { ["autocomplete"] = "new-password" })"
+                              MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudTextField @bind-Value="_model.ConfirmPassword" For="@(() => _model.ConfirmPassword)" Label="Confirmar contraseña *"
+                              InputType="@(_showPassword ? InputType.Text : InputType.Password)"
+                              UserAttributes="@(new Dictionary<string, object?> { ["autocomplete"] = "new-password" })"
+                              MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+
+            @if (CanAssignRoles)
+            {
+                @if (_roles is null)
+                {
+                    <MudSkeleton Height="40px" />
+                }
+                else
+                {
+                    <MudSelect T="string" Label="Roles" MultiSelection="true" @bind-SelectedValues="_selectedRoles"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3"
+                               HelperText="Por ejemplo, Compras o Inventario.">
+                        @foreach (RoleOptionResponse role in _roles)
+                        {
+                            <MudSelectItem Value="role.Name">@role.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+            }
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit"
+                   form="employee-user-form" Disabled="_saving">
+            @(_saving ? "Creando…" : "Crear usuario")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public EmployeeResponse Employee { get; set; } = default!;
+
+    [Parameter]
+    public bool CanAssignRoles { get; set; }
+
+    private readonly UserModel _model = new();
+    private IReadOnlyCollection<string> _selectedRoles = [];
+    private List<RoleOptionResponse>? _roles;
+    private bool _showPassword;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _model.Email = Employee.Email ?? string.Empty;
+        _model.UserName = SuggestUserName(Employee.FirstName, Employee.LastName);
+
+        if (CanAssignRoles)
+        {
+            ApiResult<List<RoleOptionResponse>> roles = await UsersApi.GetAssignableRolesAsync();
+            _roles = roles.Data ?? [];
+        }
+    }
+
+    /// <summary>Inicial del nombre + apellido, sin tildes ni espacios (alopez).</summary>
+    private static string SuggestUserName(string firstName, string lastName)
+    {
+        string text = SearchText.Normalize($"{firstName[..1]}{lastName.Split(' ')[0]}");
+        return new string(text.Where(character => char.IsAsciiLetterOrDigit(character)).ToArray());
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<UserResponse> result = await EmployeesApi.CreateUserAsync(new CreateUserRequest
+            {
+                UserName = _model.UserName,
+                Email = _model.Email,
+                Password = _model.Password,
+                Roles = _selectedRoles.ToList(),
+                EmployeeId = Employee.Id
+            });
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class UserModel : IValidatableObject
+    {
+        [Required(ErrorMessage = "El nombre de usuario es obligatorio.")]
+        [StringLength(100, MinimumLength = 3, ErrorMessage = "El nombre de usuario debe contener entre 3 y 100 caracteres.")]
+        [UserName]
+        public string UserName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "El correo electrónico es obligatorio para crear el usuario.")]
+        [EmailAddress(ErrorMessage = "El correo electrónico no es válido.")]
+        [StringLength(256, ErrorMessage = "El correo no puede superar los 256 caracteres.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "La contraseña es obligatoria.")]
+        [StringLength(100, MinimumLength = 8, ErrorMessage = "La contraseña debe contener entre 8 y 100 caracteres.")]
+        public string Password { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Confirme la contraseña.")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (Password != ConfirmPassword)
+            {
+                yield return new ValidationResult("Las contraseñas no coinciden.", [nameof(ConfirmPassword)]);
+            }
+        }
+    }
+}

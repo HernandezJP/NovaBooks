@@ -1,0 +1,6 @@
+@page "/compras/directa"
+@attribute [RequirePermission(AppPermissions.PurchasesCreate)]
+
+@* Página propia para que, al navegar desde "Nueva orden", el editor se
+   cree de nuevo en modo compra directa. *@
+<PurchaseOrderEdit Direct="true" />

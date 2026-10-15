@@ -73,23 +73,21 @@ else
                             @if (IsLegal)
                             {
                                 <MudTextField @bind-Value="_model.LegalName" For="@(() => _model.LegalName)"
-                                              Label="Razón social *" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                              Label="Razón social *" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-business" />
                                 <MudTextField @bind-Value="_model.TradeName" For="@(() => _model.TradeName)"
-                                              Label="Nombre comercial" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                              Label="Nombre comercial" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-business" />
                             }
                             else
                             {
                                 <MudTextField @bind-Value="_model.FirstName" For="@(() => _model.FirstName)"
-                                              Label="Primer nombre *" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                              Label="Primer nombre *" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-name" />
                                 <MudTextField @bind-Value="_model.MiddleName" For="@(() => _model.MiddleName)"
-                                              Label="Segundo nombre" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                              Label="Segundo nombre" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-name" />
                                 <MudTextField @bind-Value="_model.LastName" For="@(() => _model.LastName)"
-                                              Label="Primer apellido *" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                              Label="Primer apellido *" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-name" />
                                 <MudTextField @bind-Value="_model.SecondLastName" For="@(() => _model.SecondLastName)"
-                                              Label="Segundo apellido" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
-                                <MudDatePicker @bind-Date="BirthDate" Label="Fecha de nacimiento"
-                                               Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="dd/MM/yyyy"
-                                               MaxDate="DateTime.Today" ReadOnly="ReadOnly" Editable="true" />
+                                              Label="Segundo apellido" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-name" />
+                                <DateField @bind-Value="BirthDate" Label="Fecha de nacimiento" MaxDate="DateTime.Today" ReadOnly="ReadOnly" />
                             }
                         </div>
                     </div>
@@ -100,7 +98,7 @@ else
                             <MudTextField @bind-Value="_model.Nit" For="@(() => _model.Nit)"
                                           Label="@(IsLegal ? "NIT *" : "NIT")"
                                           HelperText="Sin guiones o con guion antes del dígito verificador."
-                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-nit" />
                             <div></div>
                             <MudSelect T="int?" @bind-Value="_model.IdentificationTypeId" Label="Documento"
                                        Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" ReadOnly="ReadOnly">
@@ -111,7 +109,7 @@ else
                             </MudSelect>
                             <MudTextField @bind-Value="_model.IdentificationNumber" For="@(() => _model.IdentificationNumber)"
                                           Label="Número de documento" HelperText="@IdentificationHelp"
-                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-ident" />
                         </div>
                     </div>
 
@@ -119,7 +117,7 @@ else
                         <div class="form-section__title">Contacto</div>
                         <div class="form-grid">
                             <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)" Label="Correo electrónico"
-                                          InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                          InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-email" />
                             <MudSelect T="int?" @bind-Value="_model.PhoneTypeId" For="@(() => _model.PhoneTypeId)" Label="Tipo de teléfono"
                                        Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" ReadOnly="ReadOnly">
                                 @foreach (var type in _catalogs.PhoneTypes)
@@ -128,9 +126,9 @@ else
                                 }
                             </MudSelect>
                             <MudTextField @bind-Value="_model.Phone" For="@(() => _model.Phone)" Label="Teléfono"
-                                          InputType="InputType.Telephone" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                          InputType="InputType.Telephone" Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-phone" />
                             <MudTextField @bind-Value="_model.PhoneExtension" For="@(() => _model.PhoneExtension)" Label="Extensión"
-                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" />
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" ReadOnly="ReadOnly" Class="tl-filter-digits" />
                         </div>
                         @if (!IsCreate)
                         {
@@ -151,7 +149,7 @@ else
                                              ReadOnly="ReadOnly" />
                         </div>
                         <MudTextField @bind-Value="_model.Notes" For="@(() => _model.Notes)" Label="Observaciones" Counter="1000" MaxLength="1000"
-                                      Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3" ReadOnly="ReadOnly" />
+                                      Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain mt-3" ReadOnly="ReadOnly" />
                     </div>
                 </fieldset>
 

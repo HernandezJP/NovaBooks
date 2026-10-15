@@ -31,4 +31,26 @@ public static class AppPermissions
     public const string CatalogUpdate = "Catalogo.Modificar";
     public const string CatalogDisable = "Catalogo.Desactivar";
     public const string CatalogManagePrices = "Catalogo.AdministrarPrecios";
+
+    public const string EmployeesView = "Empleados.Ver";
+    public const string EmployeesCreate = "Empleados.Crear";
+    public const string EmployeesUpdate = "Empleados.Modificar";
+    public const string EmployeesDisable = "Empleados.Desactivar";
+
+    public const string SuppliersView = "Proveedores.Ver";
+    public const string SuppliersCreate = "Proveedores.Crear";
+    public const string SuppliersUpdate = "Proveedores.Modificar";
+    public const string SuppliersDisable = "Proveedores.Desactivar";
+
+    public const string PurchasesView = "Compras.Ver";
+    public const string PurchasesCreate = "Compras.Crear";
+    public const string PurchasesUpdate = "Compras.Modificar";
+    public const string PurchasesApprove = "Compras.Aprobar";
+    public const string PurchasesReceive = "Compras.Recibir";
+    public const string PurchasesCancel = "Compras.Cancelar";
+
+    public const string InventoryView = "Inventario.Ver";
+    public const string InventoryViewCosts = "Inventario.VerCostos";
+    public const string InventoryAdjust = "Inventario.Ajustar";
+    public const string InventoryViewMovements = "Inventario.VerMovimientos";
 }

@@ -52,7 +52,7 @@
                       OnDebounceIntervalElapsed="SearchAsync"
                       OnClearButtonClick="ClearSearchAsync"
                       aria-label="Buscar usuarios"
-                      Class="list-toolbar__search" />
+                      Class="tl-filter-plain list-toolbar__search" />
 
         <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync"
                    Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
@@ -91,7 +91,7 @@
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd>
-                        <EntityCell Title="@context.UserName" Subtitle="@context.Email" Muted="!context.IsActive" />
+                        <EntityCell Title="@context.UserName" Subtitle="@(context.EmployeeName is null ? context.Email : $"{context.EmployeeCode} · {context.EmployeeName}")" Muted="!context.IsActive" />
                     </MudTd>
                     <MudTd Class="col-optional cell-nowrap">@(context.PhoneNumber ?? "—")</MudTd>
                     <MudTd>

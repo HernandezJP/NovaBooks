@@ -1,0 +1,54 @@
+@* Pide un motivo (5 a 500 caracteres, sin < >) antes de una acción
+   irreversible y lo devuelve como resultado del diálogo. *@
+@using System.ComponentModel.DataAnnotations
+@using TikalLibros.Application.Validation
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Confirm" id="reason-form">
+            <DataAnnotationsValidator />
+            @if (!string.IsNullOrWhiteSpace(Message))
+            {
+                <MudText Typo="Typo.body2" Class="mb-3">@Message</MudText>
+            }
+            <MudTextField @bind-Value="_model.Reason" For="@(() => _model.Reason)" Label="@Label"
+                          Lines="3" Counter="500" MaxLength="500" Immediate="true" AutoFocus="false"
+                          Class="tl-filter-plain" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()">Volver</MudButton>
+        <MudButton Variant="Variant.Filled" Color="ConfirmColor" ButtonType="ButtonType.Submit" form="reason-form">
+            @ConfirmText
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter]
+    public string? Message { get; set; }
+
+    [Parameter]
+    public string Label { get; set; } = "Motivo *";
+
+    [Parameter]
+    public string ConfirmText { get; set; } = "Confirmar";
+
+    [Parameter]
+    public Color ConfirmColor { get; set; } = Color.Error;
+
+    private readonly ReasonModel _model = new();
+
+    private void Confirm() => Dialog.Close(DialogResult.Ok(_model.Reason.Trim()));
+
+    private sealed class ReasonModel
+    {
+        [Required(ErrorMessage = "Indique el motivo.")]
+        [StringLength(500, MinimumLength = 5, ErrorMessage = "El motivo debe tener entre 5 y 500 caracteres.")]
+        [PlainText]
+        public string Reason { get; set; } = string.Empty;
+    }
+}

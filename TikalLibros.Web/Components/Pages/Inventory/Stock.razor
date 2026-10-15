@@ -1,0 +1,288 @@
+@page "/inventario/existencias"
+@attribute [RequirePermission(AppPermissions.InventoryView)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Inventory
+@inject InventoryApi InventoryApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Existencias | Tikal Libros</PageTitle>
+
+<PageHeader Title="Existencias"
+            Description="Unidades disponibles por libro y almacén, con sus niveles mínimo y máximo."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        @if (CanAdjust)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Tune"
+                       OnClick="() => ConfigureAsync(null)">
+                Configurar niveles
+            </MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+<div class="stat-grid">
+    <StatCard Tint="peach" Icon="@Icons.Material.Outlined.RemoveShoppingCart" Label="Agotados" Href="/inventario/alertas"
+              Loading="_summary is null && _summaryError is null" Value="@_summary?.OutOfStock.ToString("N0")" Error="@_summaryError" />
+    <StatCard Tint="sand" Icon="@Icons.Material.Outlined.TrendingDown" Label="Bajo el mínimo" Href="/inventario/alertas"
+              Loading="_summary is null && _summaryError is null" Value="@_summary?.BelowMinimum.ToString("N0")" Error="@_summaryError" />
+    <StatCard Tint="sky" Icon="@Icons.Material.Outlined.TrendingUp" Label="Sobre el máximo" Href="/inventario/alertas"
+              Loading="_summary is null && _summaryError is null" Value="@_summary?.AboveMaximum.ToString("N0")" Error="@_summaryError" />
+</div>
+
+<Panel Title="Existencias" Subtitle="Busque por título, código, ISBN o ubicación." Icon="@Icons.Material.Outlined.Inventory2">
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_search" Placeholder="Título, código, ISBN o ubicación"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="SearchAsync"
+                      OnClearButtonClick="ClearSearchAsync" MaxLength="100"
+                      aria-label="Buscar existencias" Class="list-toolbar__search tl-filter-plain" />
+
+        @if (_warehouses.Count > 1)
+        {
+            <MudSelect T="int?" Value="_warehouseId" ValueChanged="WarehouseChangedAsync" Label="Almacén" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                @foreach (CatalogOptionResponse warehouse in _warehouses)
+                {
+                    <MudSelectItem T="int?" Value="warehouse.Id">@warehouse.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+
+        <MudSelect T="string" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem T="string" Value="@string.Empty">Todos</MudSelectItem>
+            <MudSelectItem T="string" Value="@StockStatus.OutOfStock">Agotados</MudSelectItem>
+            <MudSelectItem T="string" Value="@StockStatus.BelowMinimum">Bajo el mínimo</MudSelectItem>
+            <MudSelectItem T="string" Value="@StockStatus.AboveMaximum">Sobre el máximo</MudSelectItem>
+            <MudSelectItem T="string" Value="@StockStatus.Normal">Normales</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    @if (_loading && _page is null)
+    {
+        <LoadingState />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar las existencias" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is { Items.Count: 0 })
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.Inventory2" Title="Sin existencias"
+                    Message="@(HasFilters ? "Ajuste la búsqueda o los filtros." : "Las existencias se crean al recibir compras o al registrar un ajuste.")" />
+    }
+    else if (_page is not null)
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading"
+                      Breakpoint="Breakpoint.None" Class="tl-table">
+                <HeaderContent>
+                    <MudTh>Libro</MudTh>
+                    <MudTh Class="col-optional">Almacén</MudTh>
+                    <MudTh Class="text-right">Disponible</MudTh>
+                    <MudTh Class="text-right col-optional">Mín. / máx.</MudTh>
+                    <MudTh>Estado</MudTh>
+                    @if (_showCosts)
+                    {
+                        <MudTh Class="text-right col-optional">Costo prom.</MudTh>
+                        <MudTh Class="text-right col-optional">Valor</MudTh>
+                    }
+                    <MudTh Class="tl-table__actions">Acciones</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.Title</div>
+                        <div class="cell-secondary">@context.BookCode @(context.Isbn is null ? "" : $"· {context.Isbn}")</div>
+                    </MudTd>
+                    <MudTd Class="col-optional">
+                        <div class="cell-primary">@context.Warehouse</div>
+                        <div class="cell-secondary">@(context.Location ?? "Sin ubicación")</div>
+                    </MudTd>
+                    <MudTd Class="number">
+                        <strong>@context.Available.ToString("N0")</strong>
+                        @if (context.Reserved > 0)
+                        {
+                            <div class="cell-secondary">@context.Reserved.ToString("N0") reservadas</div>
+                        }
+                    </MudTd>
+                    <MudTd Class="number col-optional">@context.Minimum.ToString("N0") / @(context.Maximum == 0 ? "—" : context.Maximum.ToString("N0"))</MudTd>
+                    <MudTd><DocumentStatus Code="@context.Status" Text="@context.StatusLabel" /></MudTd>
+                    @if (_showCosts)
+                    {
+                        <MudTd Class="number col-optional">@(context.AverageCost?.ToString("N2") ?? "—")</MudTd>
+                        <MudTd Class="number col-optional">@(context.TotalValue?.ToString("N2") ?? "—")</MudTd>
+                    }
+                    <MudTd Class="tl-table__actions">
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                 AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                 aria-label="@($"Más acciones para {context.Title}")">
+                            @if (Session.HasPermission(AppPermissions.InventoryViewMovements))
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Outlined.ReceiptLong"
+                                             Href="@($"/inventario/kardex?libro={context.BookId}&almacen={context.WarehouseId}")">
+                                    Ver kardex
+                                </MudMenuItem>
+                            }
+                            @if (CanAdjust)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Outlined.Tune" OnClick="() => ConfigureAsync(context)">
+                                    Configurar niveles
+                                </MudMenuItem>
+                                <MudMenuItem Icon="@Icons.Material.Outlined.PlaylistAddCheck"
+                                             Href="@($"/inventario/ajustes/nuevo?libro={context.BookId}&almacen={context.WarehouseId}")">
+                                    Registrar ajuste
+                                </MudMenuItem>
+                            }
+                        </MudMenu>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                   TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+</Panel>
+
+@code {
+    private const int PageSize = 15;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Inventario", null, disabled: true),
+        new("Existencias", null, disabled: true)
+    ];
+
+    [SupplyParameterFromQuery(Name = "estado")]
+    public string? StatusFromQuery { get; set; }
+
+    private PagedResponse<StockItemResponse>? _page;
+    private StockAlertSummaryResponse? _summary;
+    private string? _summaryError;
+    private IReadOnlyCollection<CatalogOptionResponse> _warehouses = [];
+    private string? _search;
+    private int? _warehouseId;
+    private string _status = string.Empty;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private bool _showCosts;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    private bool CanAdjust => Session.HasPermission(AppPermissions.InventoryAdjust);
+
+    private bool HasFilters => !string.IsNullOrWhiteSpace(_search) || _warehouseId.HasValue || _status.Length > 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _status = StatusFromQuery?.ToUpperInvariant() ?? string.Empty;
+        _showCosts = Session.HasPermission(AppPermissions.InventoryViewCosts);
+
+        Task load = LoadAsync();
+        Task summary = LoadSummaryAsync();
+        ApiResult<InventoryCatalogsResponse> catalogs = await InventoryApi.GetCatalogsAsync();
+        _warehouses = catalogs.Data?.Warehouses ?? [];
+        await Task.WhenAll(load, summary);
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        ApiResult<StockAlertSummaryResponse> result = await InventoryApi.GetAlertSummaryAsync();
+        _summary = result.Data;
+        _summaryError = result.Succeeded ? null : result.Message;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<StockItemResponse>> result = await InventoryApi.GetStockAsync(
+            new StockQuery { Search = _search, WarehouseId = _warehouseId, Status = _status, Page = _pageNumber, PageSize = PageSize },
+            token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private async Task ConfigureAsync(StockItemResponse? stock)
+    {
+        DialogParameters<StockLevelsDialog> parameters = new()
+        {
+            { dialog => dialog.Stock, stock },
+            { dialog => dialog.Warehouses, _warehouses }
+        };
+
+        IDialogReference reference = await Dialogs.ShowAsync<StockLevelsDialog>(
+            stock is null ? "Configurar niveles de un libro" : "Configurar niveles", parameters, DialogExtensions.FormOptions);
+
+        if (await reference.Result is { Canceled: false, Data: StockItemResponse saved })
+        {
+            Snackbar.Add($"Niveles de {saved.Title} guardados: {saved.StatusLabel.ToLowerInvariant()}.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadSummaryAsync());
+        }
+    }
+
+    private Task SearchAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task WarehouseChangedAsync(int? value)
+    {
+        _warehouseId = value;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(string value)
+    {
+        _status = value;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}
