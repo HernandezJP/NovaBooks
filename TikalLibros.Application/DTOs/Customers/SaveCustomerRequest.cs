@@ -16,12 +16,14 @@ public sealed class SaveCustomerRequest : IValidatableObject
     public string PersonType { get; set; } = NaturalPerson;
 
     [StringLength(100, ErrorMessage = "El primer nombre no puede superar los 100 caracteres.")]
+    [RequiredWhen(nameof(PersonType), "El primer nombre es obligatorio.", Value = NaturalPerson)]
     public string? FirstName { get; set; }
 
     [StringLength(100, ErrorMessage = "El segundo nombre no puede superar los 100 caracteres.")]
     public string? MiddleName { get; set; }
 
     [StringLength(100, ErrorMessage = "El primer apellido no puede superar los 100 caracteres.")]
+    [RequiredWhen(nameof(PersonType), "El primer apellido es obligatorio.", Value = NaturalPerson)]
     public string? LastName { get; set; }
 
     [StringLength(100, ErrorMessage = "El segundo apellido no puede superar los 100 caracteres.")]
@@ -30,6 +32,7 @@ public sealed class SaveCustomerRequest : IValidatableObject
     public DateOnly? BirthDate { get; set; }
 
     [StringLength(250, ErrorMessage = "La razón social no puede superar los 250 caracteres.")]
+    [RequiredWhen(nameof(PersonType), "La razón social es obligatoria.", Value = LegalPerson)]
     public string? LegalName { get; set; }
 
     [StringLength(250, ErrorMessage = "El nombre comercial no puede superar los 250 caracteres.")]
@@ -45,6 +48,7 @@ public sealed class SaveCustomerRequest : IValidatableObject
 
     [StringLength(20, ErrorMessage = "El NIT no puede superar los 20 caracteres.")]
     [Nit]
+    [RequiredWhen(nameof(PersonType), "El NIT es obligatorio para personas jurídicas.", Value = LegalPerson)]
     public string? Nit { get; set; }
 
     [EmailAddress(ErrorMessage = "El correo electrónico no es válido.")]
@@ -79,20 +83,6 @@ public sealed class SaveCustomerRequest : IValidatableObject
 
         if (personType == NaturalPerson)
         {
-            if (string.IsNullOrWhiteSpace(FirstName))
-            {
-                yield return new ValidationResult(
-                    "El primer nombre es obligatorio.",
-                    [nameof(FirstName)]);
-            }
-
-            if (string.IsNullOrWhiteSpace(LastName))
-            {
-                yield return new ValidationResult(
-                    "El primer apellido es obligatorio.",
-                    [nameof(LastName)]);
-            }
-
             if (BirthDate.HasValue &&
                 BirthDate.Value > DateOnly.FromDateTime(DateTime.Today))
             {
@@ -101,23 +91,7 @@ public sealed class SaveCustomerRequest : IValidatableObject
                     [nameof(BirthDate)]);
             }
         }
-        else if (personType == LegalPerson)
-        {
-            if (string.IsNullOrWhiteSpace(LegalName))
-            {
-                yield return new ValidationResult(
-                    "La razón social es obligatoria.",
-                    [nameof(LegalName)]);
-            }
-
-            if (string.IsNullOrWhiteSpace(Nit))
-            {
-                yield return new ValidationResult(
-                    "El NIT es obligatorio para personas jurídicas.",
-                    [nameof(Nit)]);
-            }
-        }
-        else
+        else if (personType != LegalPerson)
         {
             yield return new ValidationResult(
                 "El tipo de persona debe ser NATURAL o JURIDICA.",

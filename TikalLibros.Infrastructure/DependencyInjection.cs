@@ -117,6 +117,9 @@ public static class DependencyInjection
 
         services.AddScoped<IEmployeeService, EmployeeService>();
 
+        services.AddScoped<ISupplierService, SupplierService>();
+
+
 
         services.AddScoped<IProductService, ProductService>();
 

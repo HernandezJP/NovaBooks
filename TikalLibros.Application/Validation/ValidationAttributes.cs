@@ -161,13 +161,23 @@ public sealed class RequiredWhenAttribute : ValidationAttribute
         _otherProperty = otherProperty;
     }
 
+    /// <summary>
+    /// Si se indica, el campo es obligatorio solo cuando la otra propiedad
+    /// tiene exactamente este valor (sin distinguir mayÃºsculas), por ejemplo
+    /// el tipo de persona "JURIDICA".
+    /// </summary>
+    public string? Value { get; set; }
+
     protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
     {
         object? other = validationContext.ObjectType
             .GetProperty(_otherProperty)?
             .GetValue(validationContext.ObjectInstance);
 
-        bool otherHasValue = other is string text ? !string.IsNullOrWhiteSpace(text) : other is not null;
+        bool otherHasValue = Value is not null
+            ? string.Equals(other?.ToString()?.Trim(), Value, StringComparison.OrdinalIgnoreCase)
+            : other is string text ? !string.IsNullOrWhiteSpace(text) : other is not null;
+
         bool hasValue = value is string own ? !string.IsNullOrWhiteSpace(own) : value is not null;
 
         return otherHasValue && !hasValue
@@ -210,4 +220,26 @@ public sealed partial class UserNameAttribute : ValidationAttribute
 
     [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]*$")]
     private static partial System.Text.RegularExpressions.Regex UserNameRegex();
+}
+
+/// <summary>
+/// RazÃ³n social o nombre comercial: letras, dÃ­gitos, espacios y los signos
+/// habituales en nombres de empresa (. , &amp; ' - ( ) /). Empieza con letra o
+/// dÃ­gito.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed partial class BusinessNameAttribute : ValidationAttribute
+{
+    public BusinessNameAttribute(string fieldLabel)
+        : base($"La {fieldLabel} solo admite letras, nÃºmeros, espacios y los signos . , & ' - ( ) /.")
+    {
+    }
+
+    public override bool IsValid(object? value) =>
+        value is not string text ||
+        string.IsNullOrWhiteSpace(text) ||
+        BusinessNameRegex().IsMatch(text.Trim());
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^[\p{L}\p{N}][\p{L}\p{M}\p{N} .,&'â€™\-()/]*$")]
+    private static partial System.Text.RegularExpressions.Regex BusinessNameRegex();
 }
