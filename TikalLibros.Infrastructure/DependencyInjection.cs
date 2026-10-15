@@ -12,6 +12,8 @@ using TikalLibros.Infrastructure.Services;
 using TikalLibros.Infrastructure.Services.People;
 using TikalLibros.Infrastructure.Services.Documents;
 using TikalLibros.Infrastructure.Services.Purchasing;
+using TikalLibros.Infrastructure.Services.Inventory;
+
 
 
 namespace TikalLibros.Infrastructure;
@@ -131,6 +133,8 @@ public static class DependencyInjection
         services.AddScoped<IPurchaseOrderService>(provider => provider.GetRequiredService<PurchaseOrderService>());
 
         services.AddScoped<IReceptionService, ReceptionService>();
+
+        services.AddScoped<IInventoryService, InventoryService>();
 
 
 
