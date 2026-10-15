@@ -54,10 +54,23 @@ public static partial class ContactRules
         return value.Length > 0 && value.All(char.IsAsciiDigit);
     }
 
+    /// <summary>
+    /// Nombre o apellido de persona: letras (con tildes, ñ, ü), espacios,
+    /// apóstrofo, guion y punto ("O'Connor", "Jean-Paul", "J."). Sin números
+    /// ni otros símbolos.
+    /// </summary>
+    public static bool IsValidPersonName(string value)
+    {
+        return PersonNameRegex().IsMatch(value.Trim());
+    }
+
     public static string NormalizeEmail(string value)
     {
         return value.Trim().ToLowerInvariant();
     }
+
+    [GeneratedRegex(@"^\p{L}[\p{L}\p{M}'’.\- ]*$")]
+    private static partial Regex PersonNameRegex();
 
     [GeneratedRegex("^[A-Z0-9][A-Z0-9_-]*$")]
     private static partial Regex CodeRegex();

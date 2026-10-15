@@ -53,6 +53,21 @@ public sealed class DigitsOnlyAttribute : ValidationAttribute
         ContactRules.IsDigitsOnly(text.Trim());
 }
 
+/// <summary>Nombre o apellido de persona: solo letras, sin números.</summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class PersonNameAttribute : ValidationAttribute
+{
+    public PersonNameAttribute(string fieldLabel)
+        : base($"El {fieldLabel} solo puede contener letras.")
+    {
+    }
+
+    public override bool IsValid(object? value) =>
+        value is not string text ||
+        string.IsNullOrWhiteSpace(text) ||
+        ContactRules.IsValidPersonName(text);
+}
+
 public enum IsbnKind
 {
     Isbn10,

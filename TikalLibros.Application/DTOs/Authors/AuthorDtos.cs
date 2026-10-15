@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using TikalLibros.Application.Validation;
 
 namespace TikalLibros.Application.DTOs.Authors;
 
@@ -34,16 +35,20 @@ public sealed class SaveAuthorRequest : IValidatableObject
 {
     [Required(ErrorMessage = "El primer nombre es obligatorio.")]
     [StringLength(100, ErrorMessage = "El primer nombre no puede superar los 100 caracteres.")]
+    [PersonName("primer nombre")]
     public string FirstName { get; set; } = string.Empty;
 
     [StringLength(100, ErrorMessage = "El segundo nombre no puede superar los 100 caracteres.")]
+    [PersonName("segundo nombre")]
     public string? MiddleName { get; set; }
 
     [Required(ErrorMessage = "El primer apellido es obligatorio.")]
     [StringLength(100, ErrorMessage = "El primer apellido no puede superar los 100 caracteres.")]
+    [PersonName("primer apellido")]
     public string LastName { get; set; } = string.Empty;
 
     [StringLength(100, ErrorMessage = "El segundo apellido no puede superar los 100 caracteres.")]
+    [PersonName("segundo apellido")]
     public string? SecondLastName { get; set; }
 
     [StringLength(150, ErrorMessage = "El seudónimo no puede superar los 150 caracteres.")]

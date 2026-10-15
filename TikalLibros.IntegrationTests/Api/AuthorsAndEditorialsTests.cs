@@ -17,7 +17,7 @@ public sealed class AuthorsAndEditorialsTests : ApiTestBase
     public async Task Autor_CrearDuplicadoYDesactivar()
     {
         HttpClient admin = await AdminAsync();
-        SaveAuthorRequest request = new() { FirstName = "Miguel", LastName = Unique("Asturias") };
+        SaveAuthorRequest request = new() { FirstName = "Miguel", LastName = UniqueName("Asturias") };
 
         HttpResponseMessage created = await admin.PostAsJsonAsync("api/autores", request);
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
@@ -38,7 +38,7 @@ public sealed class AuthorsAndEditorialsTests : ApiTestBase
         HttpResponseMessage response = await admin.PostAsJsonAsync("api/autores", new SaveAuthorRequest
         {
             FirstName = "Autor",
-            LastName = Unique("Fechas"),
+            LastName = UniqueName("Fechas"),
             BirthDate = new DateOnly(1950, 1, 1),
             DeathDate = new DateOnly(1940, 1, 1)
         });

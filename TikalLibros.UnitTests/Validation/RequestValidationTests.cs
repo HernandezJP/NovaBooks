@@ -205,6 +205,36 @@ public sealed class RequestValidationTests
     }
 
     [Fact]
+    public void Autor_NombresConNumeros_TieneErrores()
+    {
+        SaveAuthorRequest request = new()
+        {
+            FirstName = "Gabriel2",
+            MiddleName = "José 3",
+            LastName = "García1",
+            SecondLastName = "Márquez#"
+        };
+
+        List<ValidationResult> results = Validate(request);
+
+        Assert.True(HasErrorFor(results, nameof(SaveAuthorRequest.FirstName)));
+        Assert.True(HasErrorFor(results, nameof(SaveAuthorRequest.MiddleName)));
+        Assert.True(HasErrorFor(results, nameof(SaveAuthorRequest.LastName)));
+        Assert.True(HasErrorFor(results, nameof(SaveAuthorRequest.SecondLastName)));
+    }
+
+    [Theory]
+    [InlineData("Miguel Ángel", "Asturias")]
+    [InlineData("Jean-Paul", "O'Connor")]
+    [InlineData("J.", "Muñoz Güell")]
+    public void Autor_NombresConLetrasTildesYSeparadores_SonValidos(string firstName, string lastName)
+    {
+        SaveAuthorRequest request = new() { FirstName = firstName, LastName = lastName };
+
+        Assert.Empty(Validate(request));
+    }
+
+    [Fact]
     public void Editorial_CorreoSitioYTelefonoInvalidos_TieneErrores()
     {
         SaveEditorialRequest request = new()

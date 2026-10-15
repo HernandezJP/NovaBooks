@@ -28,6 +28,10 @@ public abstract class ApiTestBase : IClassFixture<TikalLibrosApiFactory>
     protected static string Unique(string prefix) =>
         $"{prefix}{Interlocked.Increment(ref _sequence)}{Guid.NewGuid().ToString("N")[..6]}";
 
+    // Solo letras (a-p), para campos que no admiten dígitos como los nombres de autor.
+    protected static string UniqueName(string prefix) =>
+        prefix + string.Concat(Guid.NewGuid().ToString("N")[..8].Select(hex => (char)('a' + Convert.ToInt32(hex.ToString(), 16))));
+
     protected static string RandomDigits(int length) =>
         string.Concat(Enumerable.Range(0, length).Select(index =>
             (index == 0 ? Random.Shared.Next(1, 10) : Random.Shared.Next(0, 10)).ToString()));
