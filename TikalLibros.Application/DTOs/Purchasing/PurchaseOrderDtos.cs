@@ -163,6 +163,7 @@ public sealed class PurchaseOrderLineRequest
     public decimal DiscountPercent { get; set; }
 
     [StringLength(500, ErrorMessage = "La nota de la línea no puede superar los 500 caracteres.")]
+    [PlainText]
     public string? Notes { get; set; }
 }
 
@@ -187,6 +188,7 @@ public sealed class SavePurchaseOrderRequest : IValidatableObject
     public DateOnly? ExpectedDate { get; set; }
 
     [StringLength(1000, ErrorMessage = "Las observaciones no pueden superar los 1000 caracteres.")]
+    [PlainText]
     public string? Notes { get; set; }
 
     [UniqueBy(nameof(PurchaseOrderLineRequest.BookId), "Cada libro solo puede aparecer una vez en la orden.")]
@@ -203,20 +205,9 @@ public sealed class SavePurchaseOrderRequest : IValidatableObject
             yield return new ValidationResult($"La orden admite como máximo {MaxLines} libros.", [nameof(Lines)]);
         }
 
-        for (int index = 0; index < Lines.Count; index++)
+        foreach (ValidationResult result in NestedValidation.Validate(Lines, nameof(Lines)))
         {
-            List<ValidationResult> lineResults = [];
-
-            if (Lines[index] is { } line &&
-                !Validator.TryValidateObject(line, new ValidationContext(line), lineResults, validateAllProperties: true))
-            {
-                foreach (ValidationResult result in lineResults)
-                {
-                    yield return new ValidationResult(
-                        $"Línea {index + 1}: {result.ErrorMessage}",
-                        result.MemberNames.Select(member => $"{nameof(Lines)}[{index}].{member}").ToArray());
-                }
-            }
+            yield return result;
         }
 
         DateOnly today = DateOnly.FromDateTime(DateTime.Today);
@@ -234,6 +225,7 @@ public sealed class CancelPurchaseOrderRequest
 {
     [Required(ErrorMessage = "Indique el motivo de la cancelación.")]
     [StringLength(500, MinimumLength = 5, ErrorMessage = "El motivo debe tener entre 5 y 500 caracteres.")]
+    [PlainText]
     public string Reason { get; set; } = string.Empty;
 }
 

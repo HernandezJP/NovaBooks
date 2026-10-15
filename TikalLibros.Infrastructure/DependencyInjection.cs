@@ -126,7 +126,12 @@ public static class DependencyInjection
 
         services.AddScoped<CurrentEmployeeResolver>();
 
-        services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+        services.AddScoped<PurchaseOrderService>();
+
+        services.AddScoped<IPurchaseOrderService>(provider => provider.GetRequiredService<PurchaseOrderService>());
+
+        services.AddScoped<IReceptionService, ReceptionService>();
+
 
 
 

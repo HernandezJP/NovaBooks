@@ -260,3 +260,51 @@ public sealed class MaxDecimalsAttribute : ValidationAttribute
         value is not decimal number ||
         decimal.Round(number, _decimals) == number;
 }
+
+/// <summary>
+/// Texto libre (motivos, notas): admite letras, nÃºmeros y puntuaciÃ³n, pero
+/// no los signos &lt; &gt; ni caracteres de control (salvo saltos de lÃ­nea).
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class PlainTextAttribute : ValidationAttribute
+{
+    public PlainTextAttribute()
+        : base("El texto no puede contener los signos < > ni caracteres especiales de control.")
+    {
+    }
+
+    public override bool IsValid(object? value) =>
+        value is not string text ||
+        text.All(character =>
+            character is not ('<' or '>') &&
+            (!char.IsControl(character) || character is '\r' or '\n' or '\t'));
+}
+
+/// <summary>
+/// Valida los elementos de una lista y antepone "LÃ­nea N:" a cada mensaje;
+/// las claves quedan como "Lines[0].Campo", igual que en la API.
+/// </summary>
+public static class NestedValidation
+{
+    public static IEnumerable<ValidationResult> Validate<T>(IReadOnlyList<T?> items, string collectionName)
+        where T : class
+    {
+        for (int index = 0; index < items.Count; index++)
+        {
+            if (items[index] is not { } item)
+            {
+                continue;
+            }
+
+            List<ValidationResult> results = [];
+            Validator.TryValidateObject(item, new ValidationContext(item), results, validateAllProperties: true);
+
+            foreach (ValidationResult result in results)
+            {
+                yield return new ValidationResult(
+                    $"LÃ­nea {index + 1}: {result.ErrorMessage}",
+                    result.MemberNames.Select(member => $"{collectionName}[{index}].{member}").ToArray());
+            }
+        }
+    }
+}

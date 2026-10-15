@@ -303,27 +303,12 @@ public sealed class PurchaseOrderService : IPurchaseOrderService
             return Fail(resolved);
         }
 
-        int draftStatus = await StatusIdAsync(PurchaseOrderStatus.Draft, cancellationToken);
-
         try
         {
             return await _context.ExecuteInTransactionAsync(
                 async token =>
                 {
-                    PB_ORDEN_COMPRA order = new()
-                    {
-                        OCO_Numero = await _numbers.NextAsync(DocumentTypes.PurchaseOrder, token),
-                        OCO_EstadoOrdenCompraId = draftStatus,
-                        OCO_EmpleadoSolicitanteId = employee.Id,
-                        OCO_FechaEmision = DateTime.UtcNow,
-                        OCO_Activo = true,
-                        OCO_FechaCreacion = DateTime.UtcNow
-                    };
-
-                    Apply(order, request, resolved.Data!);
-                    _context.OrdenesCompra.Add(order);
-
-                    await _context.SaveChangesAsync(token);
+                    PB_ORDEN_COMPRA order = await AddOrderAsync(request, resolved.Data!, employee, PurchaseOrderStatus.Draft, token);
 
                     return OperationResult<PurchaseOrderResponse>.Success((await GetByIdAsync(order.OCO_OrdenCompra, token))!);
                 },
@@ -500,7 +485,55 @@ public sealed class PurchaseOrderService : IPurchaseOrderService
     }
 
     /// <summary>
+    /// Crea una orden ya emitida para una compra directa. Debe llamarse
+    /// dentro de la transacciÃ³n de quien registra la recepciÃ³n.
+    /// </summary>
+    internal async Task<OperationResult<PB_ORDEN_COMPRA>> CreateIssuedAsync(
+        SavePurchaseOrderRequest request,
+        CurrentEmployee employee,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<Resolved> resolved = await ResolveAsync(request, cancellationToken);
+
+        if (!resolved.Succeeded)
+        {
+            return resolved.ErrorType == OperationErrorType.Conflict
+                ? OperationResult<PB_ORDEN_COMPRA>.Conflict(resolved.Errors.ToArray())
+                : OperationResult<PB_ORDEN_COMPRA>.Failure(resolved.Errors.ToArray());
+        }
+
+        return OperationResult<PB_ORDEN_COMPRA>.Success(
+            await AddOrderAsync(request, resolved.Data!, employee, PurchaseOrderStatus.Issued, cancellationToken));
+    }
+
+    private async Task<PB_ORDEN_COMPRA> AddOrderAsync(
+        SavePurchaseOrderRequest request,
+        Resolved resolved,
+        CurrentEmployee employee,
+        string status,
+        CancellationToken cancellationToken)
+    {
+        PB_ORDEN_COMPRA order = new()
+        {
+            OCO_Numero = await _numbers.NextAsync(DocumentTypes.PurchaseOrder, cancellationToken),
+            OCO_EstadoOrdenCompraId = await StatusIdAsync(status, cancellationToken),
+            OCO_EmpleadoSolicitanteId = employee.Id,
+            OCO_FechaEmision = DateTime.UtcNow,
+            OCO_Activo = true,
+            OCO_FechaCreacion = DateTime.UtcNow
+        };
+
+        Apply(order, request, resolved);
+        _context.OrdenesCompra.Add(order);
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return order;
+    }
+
+    /// <summary>
     /// Valida proveedor, sucursal, moneda y libros, y devuelve los datos
+
     /// necesarios para calcular la orden.
     /// </summary>
     private async Task<OperationResult<Resolved>> ResolveAsync(
