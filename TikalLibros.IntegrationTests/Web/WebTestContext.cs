@@ -35,6 +35,26 @@ public abstract class WebTestContext : BunitContext
 
     protected StubHttpHandler Handler { get; } = new();
 
+    private bool _disposing;
+
+    /// <summary>
+    /// xUnit libera el contexto con Dispose(); algunos servicios de MudBlazor
+    /// (por ejemplo, el de los selectores de fecha) solo admiten liberación
+    /// asíncrona, así que se delega en DisposeAsync.
+    /// </summary>
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !_disposing)
+        {
+            _disposing = true;
+            DisposeAsync().AsTask().GetAwaiter().GetResult();
+            return;
+        }
+
+        base.Dispose(disposing);
+    }
+
+
     protected SessionState Session { get; }
 
     protected NavigationManager Navigation { get; }
@@ -66,10 +86,15 @@ public sealed class StubHttpHandler : HttpMessageHandler
 
     public string? LastPath { get; private set; }
 
+    /// <summary>Ruta y consulta de la última solicitud ("/api/compras?status=EMITIDA").</summary>
+    public string? LastPathAndQuery { get; private set; }
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         LastAuthorization = request.Headers.Authorization?.ToString();
         LastPath = request.RequestUri?.AbsolutePath;
+        LastPathAndQuery = request.RequestUri?.PathAndQuery;
+
         return Task.FromResult(Respond(request));
     }
 }

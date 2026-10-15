@@ -25,6 +25,7 @@ public sealed class DatabaseInitializer
     private readonly DatabaseOptions _options;
 
     private readonly ILogger<DatabaseInitializer> _logger;
+    private readonly DemoOperationsSeeder _demoOperations;
 
     public DatabaseInitializer(
         AppDbContext context,
@@ -33,8 +34,11 @@ public sealed class DatabaseInitializer
         IConfiguration configuration,
         IHostEnvironment environment,
         IOptions<DatabaseOptions> options,
-        ILogger<DatabaseInitializer> logger)
+        ILogger<DatabaseInitializer> logger,
+        DemoOperationsSeeder demoOperations)
     {
+        _demoOperations = demoOperations;
+
         _context = context;
         _userManager = userManager;
         _roleManager = roleManager;
@@ -181,7 +185,13 @@ public sealed class DatabaseInitializer
                 _context,
                 Services.ProductImageStorage.GetDirectory(_configuration, _environment),
                 cancellationToken);
+
+            _logger.LogInformation(
+                "Cargando datos de demostración de compras e inventario.");
+
+            await _demoOperations.SeedAsync(cancellationToken);
         }
+
 
         _logger.LogInformation(
             "Los datos iniciales fueron creados correctamente.");
