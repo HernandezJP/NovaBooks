@@ -80,7 +80,30 @@ public sealed class DateFieldTests : WebTestContext
     }
 
     [Fact]
+    public void ElegirDiaEnElCalendario_LoMuestraEnElCampo()
+    {
+        DateTime? received = null;
+        var page = Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<DateField>(1);
+            builder.AddAttribute(2, nameof(DateField.ValueChanged),
+                Microsoft.AspNetCore.Components.EventCallback.Factory.Create<DateTime?>(this, value => received = value));
+            builder.CloseComponent();
+        });
+
+        page.Find(".tl-filter-date button").Click();
+        page.FindAll(".mud-picker-calendar-day").First(day => day.TextContent.Trim() == "25" && !day.ClassList.Contains("mud-hidden")).Click();
+
+        Assert.NotNull(received);
+        Assert.Equal(25, received!.Value.Day);
+        Assert.Equal(received.Value.ToString("dd/MM/yyyy"), page.Find(".tl-filter-date input").GetAttribute("value"));
+    }
+
+    [Fact]
     public void SoloLectura_NoPermiteEscribir()
+
     {
         IRenderedComponent<DateField> component = Render<DateField>(parameters => parameters.Add(p => p.ReadOnly, true));
 

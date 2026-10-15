@@ -1890,3 +1890,16 @@ body,
 .progress-cell {
     min-width: 110px;
 }
+
+/* Rango de fechas en barras de filtros: va envuelto en un contenedor porque
+   MudDateRangePicker también aplica su Class al campo interno. */
+.list-toolbar__range {
+    flex: 0 0 260px;
+    min-width: 0;
+}
+
+@media (max-width: 600px) {
+    .list-toolbar__range {
+        flex: 1 1 100%;
+    }
+}

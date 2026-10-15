@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using TikalLibros.Application.DTOs.Common;
 using TikalLibros.Application.Validation;
+using TikalLibros.Application.Common;
 
 namespace TikalLibros.Application.DTOs.Purchasing;
 
@@ -177,7 +178,7 @@ public abstract class ReceptionHeaderRequest
 
     protected IEnumerable<ValidationResult> ValidateHeader()
     {
-        DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+        DateOnly today = BusinessTime.Today;
 
         if (ReceivedOn.HasValue && (ReceivedOn.Value > today || ReceivedOn.Value < today.AddDays(-30)))
         {

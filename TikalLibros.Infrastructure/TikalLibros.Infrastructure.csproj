@@ -23,6 +23,11 @@
 		</PackageReference>
 
 		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
+
+		<!-- Microsoft.Data.SqlClient 6.1.6 trae System.Security.Cryptography.Pkcs
+		     9.0.11, con vulnerabilidades conocidas (GHSA-846f-f764-76mx y
+		     GHSA-2fmv-rv2c-59x7); se fija la versión corregida. -->
+		<PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
 	</ItemGroup>
 
 	<ItemGroup>

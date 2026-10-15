@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using TikalLibros.Application.DTOs.Common;
 using TikalLibros.Application.Validation;
+using TikalLibros.Application.Common;
 
 namespace TikalLibros.Application.DTOs.Purchasing;
 
@@ -210,7 +211,7 @@ public sealed class SavePurchaseOrderRequest : IValidatableObject
             yield return result;
         }
 
-        DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+        DateOnly today = BusinessTime.Today;
 
         if (ExpectedDate.HasValue && (ExpectedDate.Value < today || ExpectedDate.Value > today.AddYears(1)))
         {

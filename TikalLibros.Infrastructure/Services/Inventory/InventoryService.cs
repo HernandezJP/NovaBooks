@@ -330,13 +330,13 @@ public sealed class InventoryService : IInventoryService
 
         if (query.From.HasValue)
         {
-            DateTime from = query.From.Value.ToDateTime(TimeOnly.MinValue);
+            DateTime from = BusinessTime.StartOfDayUtc(query.From.Value);
             movements = movements.Where(item => item.MOV_Fecha >= from);
         }
 
         if (query.To.HasValue)
         {
-            DateTime to = query.To.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            DateTime to = BusinessTime.EndOfDayUtcExclusive(query.To.Value);
             movements = movements.Where(item => item.MOV_Fecha < to);
         }
 
@@ -345,7 +345,11 @@ public sealed class InventoryService : IInventoryService
             string value = query.Search.Trim();
             movements = movements.Where(item =>
                 item.MOV_Numero.Contains(value) ||
-                (item.MOV_DocumentoReferencia != null && item.MOV_DocumentoReferencia.Contains(value)));
+                (item.MOV_DocumentoReferencia != null && item.MOV_DocumentoReferencia.Contains(value)) ||
+                (item.Empleado != null &&
+                 (item.Empleado.EMP_Codigo.Contains(value) ||
+                  (item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
+                   item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido).Contains(value))));
         }
 
         int totalItems = await movements.CountAsync(cancellationToken);
@@ -365,7 +369,11 @@ public sealed class InventoryService : IInventoryService
                 Date = item.MOV_Fecha,
                 Warehouse = item.AlmacenDestino != null ? item.AlmacenDestino.ALM_Nombre : item.AlmacenOrigen!.ALM_Nombre,
                 DocumentReference = item.MOV_DocumentoReferencia,
-                Employee = item.Empleado != null ? item.Empleado.EMP_Codigo : null,
+                Employee = item.Empleado != null
+                    ? item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
+                      item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido
+                    : null,
+                EmployeeCode = item.Empleado != null ? item.Empleado.EMP_Codigo : null,
                 Units = item.Detalles.Sum(line => line.MDE_Cantidad),
                 Annulled = item.MOV_Anulado
             })
@@ -400,9 +408,9 @@ public sealed class InventoryService : IInventoryService
                 TargetWarehouse = item.AlmacenDestino != null ? item.AlmacenDestino.ALM_Nombre : null,
                 DocumentReference = item.MOV_DocumentoReferencia,
                 Employee = item.Empleado != null
-                    ? item.Empleado.EMP_Codigo + " · " +
-                      item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
-                      item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido
+                    ? item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
+                      item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido +
+                      " (" + item.Empleado.EMP_Codigo + ")"
                     : null,
                 Notes = item.MOV_Observaciones,
                 Annulled = item.MOV_Anulado,
@@ -497,8 +505,8 @@ public sealed class InventoryService : IInventoryService
                            line.MOV_AlmacenOrigenId == warehouseId ||
                            line.MOV_AlmacenDestinoId == warehouseId);
 
-        DateTime? from = query.From?.ToDateTime(TimeOnly.MinValue);
-        DateTime? to = query.To?.AddDays(1).ToDateTime(TimeOnly.MinValue);
+        DateTime? from = query.From is { } fromDate ? BusinessTime.StartOfDayUtc(fromDate) : null;
+        DateTime? to = query.To is { } toDate ? BusinessTime.EndOfDayUtcExclusive(toDate) : null;
 
         var rows = await lines
             .Where(line => to == null || line.MOV_Fecha < to)
@@ -563,6 +571,7 @@ public sealed class InventoryService : IInventoryService
     }
 
     public async Task<PagedResponse<AdjustmentListItemResponse>> GetAdjustmentsAsync(
+        string? search,
         int page,
         int pageSize,
         CancellationToken cancellationToken = default)
@@ -571,6 +580,16 @@ public sealed class InventoryService : IInventoryService
         pageSize = pageSize switch { < 1 => 10, > 100 => 100, _ => pageSize };
 
         IQueryable<PB_AJUSTE_INVENTARIO> adjustments = _context.AjustesInventario.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            string value = search.Trim();
+            adjustments = adjustments.Where(item =>
+                item.AJU_Numero.Contains(value) ||
+                item.Empleado.EMP_Codigo.Contains(value) ||
+                (item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
+                 item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido).Contains(value));
+        }
 
         int totalItems = await adjustments.CountAsync(cancellationToken);
 
@@ -587,7 +606,9 @@ public sealed class InventoryService : IInventoryService
                 Reason = item.MotivoAjuste.MAJ_Nombre,
                 Nature = item.MotivoAjuste.MAJ_Naturaleza,
                 Date = item.AJU_Fecha,
-                Employee = item.Empleado.EMP_Codigo,
+                Employee = item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
+                           item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido,
+                EmployeeCode = item.Empleado.EMP_Codigo,
                 Units = item.Detalles.Sum(line => line.AID_Diferencia)
             })
             .ToListAsync(cancellationToken);
@@ -617,9 +638,9 @@ public sealed class InventoryService : IInventoryService
                 Reason = item.MotivoAjuste.MAJ_Nombre,
                 Nature = item.MotivoAjuste.MAJ_Naturaleza,
                 Date = item.AJU_Fecha,
-                Employee = item.Empleado.EMP_Codigo + " · " +
-                           item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
-                           item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido,
+                Employee = item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
+                           item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido +
+                           " (" + item.Empleado.EMP_Codigo + ")",
                 MovementNumber = item.MovimientoInventario != null ? item.MovimientoInventario.MOV_Numero : null,
                 Notes = item.AJU_Observaciones,
                 Lines = item.Detalles
@@ -791,7 +812,7 @@ public sealed class InventoryService : IInventoryService
                                 LOT_AlmacenId = warehouseId!.Value,
                                 LOT_LibroId = bookId,
                                 LOT_Numero = adjustment.AJU_Numero,
-                                LOT_FechaIngreso = DateOnly.FromDateTime(now),
+                                LOT_FechaIngreso = BusinessTime.Today,
                                 LOT_CantidadInicial = quantity,
                                 LOT_CantidadActual = quantity,
                                 LOT_CostoUnitario = unitCost,

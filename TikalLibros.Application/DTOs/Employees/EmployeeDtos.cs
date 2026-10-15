@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using TikalLibros.Application.DTOs.Common;
 using TikalLibros.Application.Validation;
+using TikalLibros.Application.Common;
 
 namespace TikalLibros.Application.DTOs.Employees;
 
@@ -135,7 +136,7 @@ public sealed class SaveEmployeeRequest : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+        DateOnly today = BusinessTime.Today;
 
         if (BirthDate.HasValue)
         {

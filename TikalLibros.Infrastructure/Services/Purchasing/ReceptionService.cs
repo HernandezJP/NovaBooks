@@ -57,13 +57,13 @@ public sealed class ReceptionService : IReceptionService
 
         if (query.From.HasValue)
         {
-            DateTime from = query.From.Value.ToDateTime(TimeOnly.MinValue);
+            DateTime from = BusinessTime.StartOfDayUtc(query.From.Value);
             receptions = receptions.Where(item => item.REC_FechaRecepcion >= from);
         }
 
         if (query.To.HasValue)
         {
-            DateTime to = query.To.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            DateTime to = BusinessTime.EndOfDayUtcExclusive(query.To.Value);
             receptions = receptions.Where(item => item.REC_FechaRecepcion < to);
         }
 
@@ -150,9 +150,9 @@ public sealed class ReceptionService : IReceptionService
                 ReceivedAt = item.REC_FechaRecepcion,
                 SupplierDocumentSeries = item.REC_SerieDocumentoProveedor,
                 SupplierDocumentNumber = item.REC_NumeroDocumentoProveedor,
-                ReceivedBy = item.Empleado.EMP_Codigo + " · " +
-                             item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
-                             item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido,
+                ReceivedBy = item.Empleado.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
+                             item.Empleado.Persona.PersonaNatural.PNA_PrimerApellido +
+                             " (" + item.Empleado.EMP_Codigo + ")",
                 MovementNumber = item.MovimientosInventario
                     .OrderBy(movement => movement.MOV_MovimientoInventario)
                     .Select(movement => movement.MOV_Numero)
@@ -440,10 +440,10 @@ public sealed class ReceptionService : IReceptionService
             errors.Add("Debe aceptar al menos una unidad para registrar la entrada a inventario.");
         }
 
-        DateOnly today = DateOnly.FromDateTime(DateTime.UtcNow);
+        DateOnly today = BusinessTime.Today;
         DateOnly receivedOn = header.ReceivedOn ?? today;
 
-        if (receivedOn < DateOnly.FromDateTime(order.OCO_FechaEmision))
+        if (receivedOn < BusinessTime.ToLocalDate(order.OCO_FechaEmision))
         {
             errors.Add("La fecha de recepción no puede ser anterior a la emisión de la orden.");
         }
@@ -482,7 +482,9 @@ public sealed class ReceptionService : IReceptionService
         }
 
         DateTime now = DateTime.UtcNow;
-        DateTime receivedAt = receivedOn == today ? now : receivedOn.ToDateTime(new TimeOnly(12, 0));
+        DateTime receivedAt = receivedOn == today
+            ? now
+            : TimeZoneInfo.ConvertTimeToUtc(receivedOn.ToDateTime(new TimeOnly(12, 0)), BusinessTime.Zone);
         string receptionNumber = await _numbers.NextAsync(DocumentTypes.PurchaseReception, cancellationToken);
 
         PB_RECEPCION_COMPRA reception = new()

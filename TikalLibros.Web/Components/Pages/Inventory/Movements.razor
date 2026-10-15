@@ -19,9 +19,9 @@
     </Actions>
 </PageHeader>
 
-<Panel Title="Movimientos" Subtitle="Busque por número o documento de referencia (orden, factura, ajuste)." Icon="@Icons.Material.Outlined.SwapVert">
+<Panel Title="Movimientos" Subtitle="Busque por número, documento de referencia (orden, factura, ajuste) o empleado." Icon="@Icons.Material.Outlined.SwapVert">
     <div class="list-toolbar">
-        <MudTextField @bind-Value="_search" Placeholder="Número o documento"
+        <MudTextField @bind-Value="_search" Placeholder="Número, documento o empleado"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
                       Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
                       DebounceInterval="400" OnDebounceIntervalElapsed="ReloadAsync"
@@ -37,9 +37,11 @@
             }
         </MudSelect>
 
-        <MudDateRangePicker DateRange="_range" DateRangeChanged="RangeChangedAsync" Label="Fechas" Clearable="true"
-                            MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy"
-                            Variant="Variant.Outlined" Margin="Margin.Dense" Class="list-toolbar__filter" />
+        <div class="list-toolbar__range">
+            <MudDateRangePicker DateRange="_range" DateRangeChanged="RangeChangedAsync" Label="Fechas" Clearable="true"
+                                MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy"
+                                Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
     </div>
 
     @if (_loading && _page is null)
@@ -78,7 +80,17 @@
                     <MudTd Class="@($"number {(context.Nature > 0 ? "qty-in" : context.Nature < 0 ? "qty-out" : "")}")">
                         @(context.Nature > 0 ? "+" : context.Nature < 0 ? "−" : "")@context.Units.ToString("N0")
                     </MudTd>
-                    <MudTd Class="col-optional">@(context.Employee ?? "—")</MudTd>
+                    <MudTd Class="col-optional">
+                        @if (context.Employee is null)
+                        {
+                            <span>—</span>
+                        }
+                        else
+                        {
+                            <div>@context.Employee</div>
+                            <div class="cell-secondary">@context.EmployeeCode</div>
+                        }
+                    </MudTd>
                 </RowTemplate>
             </MudTable>
         </div>

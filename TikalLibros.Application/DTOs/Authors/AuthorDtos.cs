@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using TikalLibros.Application.Validation;
+using TikalLibros.Application.Common;
 
 namespace TikalLibros.Application.DTOs.Authors;
 
@@ -65,7 +66,7 @@ public sealed class SaveAuthorRequest : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+        DateOnly today = BusinessTime.Today;
 
         if (BirthDate > today)
         {

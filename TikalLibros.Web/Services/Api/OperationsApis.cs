@@ -189,9 +189,9 @@ public sealed class InventoryApi(ApiClient api)
                 ("to", query.To?.ToString("yyyy-MM-dd"))),
             cancellationToken);
 
-    public Task<ApiResult<PagedResponse<AdjustmentListItemResponse>>> GetAdjustmentsAsync(int page, int pageSize, CancellationToken cancellationToken = default) =>
+    public Task<ApiResult<PagedResponse<AdjustmentListItemResponse>>> GetAdjustmentsAsync(string? search, int page, int pageSize, CancellationToken cancellationToken = default) =>
         api.GetAsync<PagedResponse<AdjustmentListItemResponse>>(
-            QueryString.Build("api/inventario/ajustes", ("page", page), ("pageSize", pageSize)), cancellationToken);
+            QueryString.Build("api/inventario/ajustes", ("search", search?.Trim()), ("page", page), ("pageSize", pageSize)), cancellationToken);
 
     public Task<ApiResult<AdjustmentResponse>> GetAdjustmentAsync(int id, CancellationToken cancellationToken = default) =>
         api.GetAsync<AdjustmentResponse>($"api/inventario/ajustes/{id}", cancellationToken);

@@ -48,13 +48,13 @@ public sealed class PurchaseOrderService : IPurchaseOrderService
 
         if (query.From.HasValue)
         {
-            DateTime from = query.From.Value.ToDateTime(TimeOnly.MinValue);
+            DateTime from = BusinessTime.StartOfDayUtc(query.From.Value);
             orders = orders.Where(order => order.OCO_FechaEmision >= from);
         }
 
         if (query.To.HasValue)
         {
-            DateTime to = query.To.Value.AddDays(1).ToDateTime(TimeOnly.MinValue);
+            DateTime to = BusinessTime.EndOfDayUtcExclusive(query.To.Value);
             orders = orders.Where(order => order.OCO_FechaEmision < to);
         }
 
@@ -144,9 +144,9 @@ public sealed class PurchaseOrderService : IPurchaseOrderService
                 IssueDate = order.OCO_FechaEmision,
                 ExpectedDate = order.OCO_FechaEntregaEsperada,
                 RequestedBy = order.EmpleadoSolicitante != null
-                    ? order.EmpleadoSolicitante.EMP_Codigo + " · " +
-                      order.EmpleadoSolicitante.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
-                      order.EmpleadoSolicitante.Persona.PersonaNatural.PNA_PrimerApellido
+                    ? order.EmpleadoSolicitante.Persona.PersonaNatural!.PNA_PrimerNombre + " " +
+                      order.EmpleadoSolicitante.Persona.PersonaNatural.PNA_PrimerApellido +
+                      " (" + order.EmpleadoSolicitante.EMP_Codigo + ")"
                     : null,
                 Notes = order.OCO_Observaciones,
                 Subtotal = order.OCO_Subtotal,
@@ -407,9 +407,13 @@ public sealed class PurchaseOrderService : IPurchaseOrderService
             problems.Add("La orden no tiene libros.");
         }
 
-        if (order.OCO_FechaEntregaEsperada is { } expected && expected < DateOnly.FromDateTime(DateTime.UtcNow))
+        if (order.OCO_FechaEntregaEsperada is { } expected && expected < BusinessTime.Today)
         {
             problems.Add("La fecha de entrega esperada ya pasó; actualícela antes de emitir.");
+        }
+        else if (ExpectedDateTooEarly(order.OCO_FechaEntregaEsperada))
+        {
+            problems.Add(LateExpectedDateMessage);
         }
 
         int[] bookIds = order.Detalles.Select(line => line.OCD_LibroId).ToArray();
@@ -541,6 +545,11 @@ public sealed class PurchaseOrderService : IPurchaseOrderService
         CancellationToken cancellationToken)
     {
         List<string> errors = [];
+
+        if (ExpectedDateTooEarly(request.ExpectedDate))
+        {
+            errors.Add(LateExpectedDateMessage);
+        }
 
         var supplier = await _context.Proveedores
             .AsNoTracking()
@@ -680,7 +689,19 @@ public sealed class PurchaseOrderService : IPurchaseOrderService
         order.OCO_Total = order.Detalles.Sum(line => line.OCD_Total);
     }
 
+    private const string LateExpectedDateMessage =
+        "Después de las 18:00 la entrega esperada debe ser a partir de mañana (o puede dejarse vacía).";
+
+    /// <summary>
+    /// La base exige que la entrega esperada no sea anterior a la fecha de
+    /// emisión, que se guarda en UTC: desde las 18:00 de Guatemala la fecha UTC
+    /// ya es la de mañana y una entrega "para hoy" no se podría guardar.
+    /// </summary>
+    private static bool ExpectedDateTooEarly(DateOnly? expected) =>
+        expected is { } date && date < DateOnly.FromDateTime(DateTime.UtcNow);
+
     private Task<int> StatusIdAsync(string code, CancellationToken cancellationToken) =>
+
         _context.EstadosOrdenCompra
             .Where(status => status.EOC_Codigo == code)
             .Select(status => status.EOC_EstadoOrdenCompra)

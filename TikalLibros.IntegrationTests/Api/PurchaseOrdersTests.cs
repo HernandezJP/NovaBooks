@@ -79,7 +79,7 @@ public sealed class PurchaseOrdersTests : ApiTestBase
         Assert.Matches(@"^OC-\d{6}$", order.Number);
         Assert.Equal(PurchaseOrderStatus.Draft, order.StatusCode);
         Assert.True(order.CanEdit && order.CanIssue && order.CanCancel && !order.CanReceive);
-        Assert.NotNull(order.RequestedBy);
+        Assert.Matches(@"^.+ \(.+\)$", order.RequestedBy); // Nombre Apellido (código)
 
         PurchaseOrderLineResponse line = Assert.Single(order.Lines);
         decimal expectedTax = decimal.Round(450m * line.TaxPercent / 100m, 2, MidpointRounding.AwayFromZero);

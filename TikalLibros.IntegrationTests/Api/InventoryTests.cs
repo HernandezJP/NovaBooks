@@ -197,6 +197,43 @@ public sealed class InventoryTests : ApiTestBase
     }
 
     [Fact]
+    public async Task Ajuste_MuestraNombreYCodigoDelEmpleadoYSeBuscaPorEllos()
+    {
+        HttpClient admin = await AdminAsync();
+        int supplier = await CreateSupplierAsync(admin);
+        int book = await CreateBookAsync(admin);
+        await PurchaseAsync(admin, supplier, book, 3, 10m);
+        AdjustmentReasonResponse damage = (await CatalogsAsync(admin)).AdjustmentReasons.First(reason => reason.Code == "DANIO");
+
+        HttpResponseMessage response = await admin.PostAsJsonAsync("api/inventario/ajustes", Adjustment(damage, book, 1));
+        AdjustmentResponse detail = (await response.Content.ReadFromJsonAsync<AdjustmentResponse>())!;
+
+        PagedResponse<AdjustmentListItemResponse> all = (await admin.GetFromJsonAsync<PagedResponse<AdjustmentListItemResponse>>(
+            "api/inventario/ajustes?pageSize=100"))!;
+        AdjustmentListItemResponse item = Assert.Single(all.Items, adjustment => adjustment.Id == detail.Id);
+        Assert.False(string.IsNullOrWhiteSpace(item.EmployeeCode));
+        Assert.DoesNotContain(item.EmployeeCode, item.Employee);
+        Assert.Equal($"{item.Employee} ({item.EmployeeCode})", detail.Employee);
+
+        foreach (string search in new[] { item.Employee, item.EmployeeCode, detail.Number })
+        {
+            PagedResponse<AdjustmentListItemResponse> found = (await admin.GetFromJsonAsync<PagedResponse<AdjustmentListItemResponse>>(
+                $"api/inventario/ajustes?pageSize=100&search={Uri.EscapeDataString(search)}"))!;
+            Assert.Contains(found.Items, adjustment => adjustment.Id == detail.Id);
+        }
+
+        PagedResponse<AdjustmentListItemResponse> none = (await admin.GetFromJsonAsync<PagedResponse<AdjustmentListItemResponse>>(
+            "api/inventario/ajustes?search=Nadie%20Inexistente"))!;
+        Assert.Empty(none.Items);
+
+        PagedResponse<MovementListItemResponse> movements = (await admin.GetFromJsonAsync<PagedResponse<MovementListItemResponse>>(
+            $"api/inventario/movimientos?pageSize=100&search={Uri.EscapeDataString(item.Employee)}"))!;
+        MovementListItemResponse movement = Assert.Single(movements.Items, entry => entry.Number == detail.MovementNumber);
+        Assert.Equal(item.Employee, movement.Employee);
+        Assert.Equal(item.EmployeeCode, movement.EmployeeCode);
+    }
+
+    [Fact]
     public async Task AjusteNegativo_MayorQueLaExistencia_Devuelve409SinCambios()
     {
         HttpClient admin = await AdminAsync();

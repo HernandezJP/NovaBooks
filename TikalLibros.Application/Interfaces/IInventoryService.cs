@@ -41,6 +41,7 @@ public interface IInventoryService
         CancellationToken cancellationToken = default);
 
     Task<PagedResponse<AdjustmentListItemResponse>> GetAdjustmentsAsync(
+        string? search,
         int page,
         int pageSize,
         CancellationToken cancellationToken = default);

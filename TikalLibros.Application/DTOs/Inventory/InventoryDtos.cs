@@ -182,7 +182,10 @@ public sealed class MovementListItemResponse
 
     public string? DocumentReference { get; set; }
 
+    /// <summary>Nombre corto del empleado que registró.</summary>
     public string? Employee { get; set; }
+
+    public string? EmployeeCode { get; set; }
 
     public decimal Units { get; set; }
 
@@ -420,7 +423,10 @@ public sealed class AdjustmentListItemResponse
 
     public DateTime Date { get; set; }
 
+    /// <summary>Nombre corto del empleado que registró.</summary>
     public string Employee { get; set; } = string.Empty;
+
+    public string EmployeeCode { get; set; } = string.Empty;
 
     public decimal Units { get; set; }
 }

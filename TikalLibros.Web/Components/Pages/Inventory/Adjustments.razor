@@ -1,5 +1,6 @@
 @page "/inventario/ajustes"
 @attribute [RequirePermission(AppPermissions.InventoryAdjust)]
+@implements IDisposable
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Inventory
 @inject InventoryApi InventoryApi
@@ -17,7 +18,16 @@
     </Actions>
 </PageHeader>
 
-<Panel Title="Ajustes" Icon="@Icons.Material.Outlined.Tune">
+<Panel Title="Ajustes" Subtitle="Busque por número de ajuste o por el empleado que lo registró." Icon="@Icons.Material.Outlined.Tune">
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_search" Placeholder="Número o empleado"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="ReloadAsync"
+                      OnClearButtonClick="ClearSearchAsync" MaxLength="100"
+                      aria-label="Buscar ajustes" Class="list-toolbar__search tl-filter-plain" />
+    </div>
+
     @if (_error is not null)
     {
         <ErrorState Title="No fue posible cargar los ajustes" Message="@_error" OnRetry="LoadAsync" />
@@ -28,7 +38,8 @@
     }
     else if (_page.Items.Count == 0)
     {
-        <EmptyState Icon="@Icons.Material.Outlined.Tune" Title="Sin ajustes" Message="Registre un ajuste cuando el conteo físico no coincida con el sistema." />
+        <EmptyState Icon="@Icons.Material.Outlined.Tune" Title="Sin ajustes"
+                    Message="@(string.IsNullOrWhiteSpace(_search) ? "Registre un ajuste cuando el conteo físico no coincida con el sistema." : "No hay ajustes que coincidan con la búsqueda.")" />
     }
     else
     {
@@ -50,7 +61,10 @@
                     <MudTd>@context.Reason</MudTd>
                     <MudTd Class="col-optional">@context.Warehouse</MudTd>
                     <MudTd Class="@($"number {(context.Units >= 0 ? "qty-in" : "qty-out")}")">@(context.Units > 0 ? "+" : "")@context.Units.ToString("N0")</MudTd>
-                    <MudTd Class="col-optional">@context.Employee</MudTd>
+                    <MudTd Class="col-optional">
+                        <div>@context.Employee</div>
+                        <div class="cell-secondary">@context.EmployeeCode</div>
+                    </MudTd>
                 </RowTemplate>
             </MudTable>
         </div>
@@ -68,22 +82,53 @@
     ];
 
     private PagedResponse<AdjustmentListItemResponse>? _page;
+    private string? _search;
     private int _pageNumber = 1;
     private string? _error;
+    private CancellationTokenSource? _loadCancellation;
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
     private async Task LoadAsync()
     {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
         _error = null;
-        ApiResult<PagedResponse<AdjustmentListItemResponse>> result = await InventoryApi.GetAdjustmentsAsync(_pageNumber, 15);
+        ApiResult<PagedResponse<AdjustmentListItemResponse>> result = await InventoryApi.GetAdjustmentsAsync(_search, _pageNumber, 15, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
         _page = result.Data;
         _error = result.Succeeded ? null : result.Message;
+    }
+
+    private Task ReloadAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
     }
 
     private Task PageChangedAsync(int page)
     {
         _pageNumber = page;
         return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
     }
 }

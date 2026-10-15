@@ -35,9 +35,11 @@
             </MudSelect>
         }
 
-        <MudDateRangePicker DateRange="_range" DateRangeChanged="RangeChangedAsync" Label="Período" Clearable="true"
-                            MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy"
-                            Variant="Variant.Outlined" Margin="Margin.Dense" Class="list-toolbar__filter" />
+        <div class="list-toolbar__range">
+            <MudDateRangePicker DateRange="_range" DateRangeChanged="RangeChangedAsync" Label="Período" Clearable="true"
+                                MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy"
+                                Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
     </div>
 
     @if (BookId is null)

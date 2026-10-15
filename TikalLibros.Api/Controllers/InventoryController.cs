@@ -115,11 +115,12 @@ public sealed class InventoryController : ControllerBase
     [HttpGet("ajustes")]
     [ProducesResponseType(typeof(PagedResponse<AdjustmentListItemResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResponse<AdjustmentListItemResponse>>> GetAdjustments(
+        [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
         CancellationToken cancellationToken = default)
     {
-        return Ok(await _inventory.GetAdjustmentsAsync(page, pageSize, cancellationToken));
+        return Ok(await _inventory.GetAdjustmentsAsync(search, page, pageSize, cancellationToken));
     }
 
     [HasAnyPermission(InventoryPermissions.Adjust, InventoryPermissions.ViewMovements)]

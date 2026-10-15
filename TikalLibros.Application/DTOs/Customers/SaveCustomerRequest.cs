@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using TikalLibros.Application.Validation;
+using TikalLibros.Application.Common;
 
 namespace TikalLibros.Application.DTOs.Customers;
 
@@ -92,7 +93,7 @@ public sealed class SaveCustomerRequest : IValidatableObject
         if (personType == NaturalPerson)
         {
             if (BirthDate.HasValue &&
-                BirthDate.Value > DateOnly.FromDateTime(DateTime.Today))
+                BirthDate.Value > BusinessTime.Today)
             {
                 yield return new ValidationResult(
                     "La fecha de nacimiento no puede ser futura.",
