@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Configuration;
 using TikalLibros.Application.Interfaces;
+using TikalLibros.Application.Validation;
 using TikalLibros.Domain.Entities.Configuration;
 using TikalLibros.Infrastructure.Data;
 using TikalLibros.Infrastructure.Data.Seed;
@@ -61,6 +62,18 @@ public sealed class SystemParameterService : ISystemParameterService
             : decimal.Parse(Definition(key).DefaultValue, CultureInfo.InvariantCulture);
     }
 
+    public async Task<string> GetStringAsync(
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        string? value = await Parameters
+            .Where(parameter => parameter.PAR_Clave == key)
+            .Select(parameter => parameter.PAR_Valor)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return string.IsNullOrWhiteSpace(value) ? Definition(key).DefaultValue : value;
+    }
+
     public async Task<OperationResult<SystemParameterResponse>> UpdateAsync(
         string key,
         UpdateSystemParameterRequest request,
@@ -79,19 +92,34 @@ public sealed class SystemParameterService : ISystemParameterService
             return OperationResult<SystemParameterResponse>.Conflict("Este parámetro no puede modificarse.");
         }
 
-        if (!TryParse(request.Value, out decimal value))
+        string normalized;
+
+        if (parameter.PAR_TipoDato == "STRING")
         {
-            return OperationResult<SystemParameterResponse>.Failure("El valor solo admite números.");
+            // Por ahora el único parámetro de texto es el NIT del emisor.
+            normalized = ContactRules.NormalizeIdentification(request.Value);
+
+            if (parameter.PAR_Clave == SystemParameterKeys.InvoiceIssuerNit && !ContactRules.IsValidNitFormat(normalized))
+            {
+                return OperationResult<SystemParameterResponse>.Failure("El NIT del emisor no es válido (dígitos y verificador final numérico o K).");
+            }
         }
-
-        string? error = await ValidateAsync(parameter.PAR_Clave, value, cancellationToken);
-
-        if (error is not null)
+        else
         {
-            return OperationResult<SystemParameterResponse>.Failure(error);
-        }
+            if (!TryParse(request.Value, out decimal value))
+            {
+                return OperationResult<SystemParameterResponse>.Failure("El valor solo admite números.");
+            }
 
-        string normalized = value.ToString("0.##", CultureInfo.InvariantCulture);
+            string? error = await ValidateAsync(parameter.PAR_Clave, value, cancellationToken);
+
+            if (error is not null)
+            {
+                return OperationResult<SystemParameterResponse>.Failure(error);
+            }
+
+            normalized = value.ToString("0.##", CultureInfo.InvariantCulture);
+        }
         string? before = parameter.PAR_Valor;
 
         parameter.PAR_Valor = normalized;

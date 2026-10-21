@@ -1,0 +1,252 @@
+@page "/ventas/nueva"
+@attribute [RequirePermission(AppPermissions.SalesCreate)]
+@using TikalLibros.Application.DTOs.Cash
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Customers
+@using TikalLibros.Application.DTOs.Sales
+@inject OrdersApi OrdersApi
+@inject SalesApi SalesApi
+@inject CashApi CashApi
+@inject SessionState Session
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Punto de venta | Tikal Libros</PageTitle>
+
+<PageHeader Title="Punto de venta"
+            Description="Venta de mostrador: agregue los libros, cobre y el inventario se descuenta al registrar."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        @if (_cash is not null)
+        {
+            <MudChip T="string" Icon="@Icons.Material.Outlined.PointOfSale" Color="Color.Success" Variant="Variant.Outlined">
+                @_cash.CashRegister · esperado Q @_cash.ExpectedCash.ToString("N2")
+            </MudChip>
+        }
+    </Actions>
+</PageHeader>
+
+@if (_loadError is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible preparar la venta" Message="@_loadError" OnRetry="LoadAsync" /></div>
+}
+else if (_catalogs is null || _saleCatalogs is null)
+{
+    <div class="panel"><LoadingState Rows="6" /></div>
+}
+else
+{
+    @if (_cash is null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4">
+            No tiene una caja abierta: solo podrá registrar ventas al crédito sin abono.
+            @if (Session.HasPermission(AppPermissions.CashOpen))
+            {
+                <a href="/caja">Abrir mi caja</a>
+            }
+        </MudAlert>
+    }
+
+    <div class="pos-layout">
+        <div class="layout-stack">
+            <div class="panel">
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <div class="form-grid">
+                    <CustomerPicker Label="@(IsCredit ? "Cliente *" : "Cliente (opcional)")" Value="_customer" ValueChanged="customer => _customer = customer"
+                                    HelperText="@(IsCredit ? "Las ventas al crédito requieren cliente." : "Sin cliente se factura a consumidor final (CF).")"
+                                    Error="@(_submitted && IsCredit && _customer is null)" ErrorText="Seleccione el cliente."
+                                    Disabled="_saving" />
+                    <MudSelect T="string" Value="_saleType" ValueChanged="SaleTypeChanged" Label="Condición de pago"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="_saving">
+                        <MudSelectItem T="string" Value="@SaleType.Cash">Contado</MudSelectItem>
+                        <MudSelectItem T="string" Value="@SaleType.Credit" Disabled="!Session.HasPermission(AppPermissions.SalesSellOnCredit)">Crédito</MudSelectItem>
+                    </MudSelect>
+                    <MudSelect T="int?" @bind-Value="_priceListId" Label="Lista de precios" Disabled="@(_saving || _lines.Count > 0)"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (CatalogOptionResponse list in _catalogs.PriceLists)
+                        {
+                            <MudSelectItem T="int?" Value="list.Id">@list.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+            </div>
+
+            <Panel Title="Libros" Icon="@Icons.Material.Outlined.MenuBook" Subtitle="Precios con IVA incluido.">
+                <SaleLinesEditor Lines="_lines" LinesChanged="LinesChanged"
+                                 PriceListId="_priceListId" WarehouseId="_catalogs.Warehouses.FirstOrDefault()?.Id"
+                                 DiscountWithoutApproval="_catalogs.DiscountWithoutApproval" MaximumDiscount="_catalogs.MaximumDiscount"
+                                 CanDiscount="Session.HasPermission(AppPermissions.SalesApplyDiscount)"
+                                 Submitted="_submitted" Disabled="_saving" />
+                @if (_lines.Any(line => line.DiscountPercent > _catalogs.DiscountWithoutApproval) && !Session.HasPermission(AppPermissions.OrdersApprove))
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                        Un descuento mayor a @_catalogs.DiscountWithoutApproval.ToString("0.##") % requiere aprobación:
+                        <a href="/pedidos/nuevo">registre un pedido</a> o pida a un supervisor que haga la venta.
+                    </MudAlert>
+                }
+            </Panel>
+        </div>
+
+        <Panel Title="Cobro" Icon="@Icons.Material.Outlined.Payments">
+            <div class="pos-total">Q @Total.ToString("N2")</div>
+            <p class="form-hint mb-3">@(_lines.Sum(line => line.Quantity ?? 0)) unidad(es) · IVA incluido Q @_lines.Sum(line => line.Amounts.Tax).ToString("N2")</p>
+
+            <PaymentsEditor Methods="_saleCatalogs.PaymentMethods" Payments="_payments" Due="Total" RequireFull="!IsCredit"
+                            Submitted="_submitted" Disabled="@(_saving || (_cash is null))" PaymentsChanged="StateHasChanged" />
+
+            <MudTextField @bind-Value="_notes" Label="Observaciones" MaxLength="1000"
+                          Class="mt-3 tl-filter-plain" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="_saving" />
+
+            <div class="form-actions">
+                <MudButton Variant="Variant.Text" OnClick="Clear" Disabled="_saving">Limpiar</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.PointOfSale"
+                           OnClick="SellAsync" Disabled="@(_saving || _lines.Count == 0)">
+                    @(_saving ? "Registrando…" : IsCredit ? "Registrar venta al crédito" : "Cobrar y registrar")
+                </MudButton>
+            </div>
+        </Panel>
+    </div>
+}
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Ventas", "/ventas"),
+        new("Punto de venta", null, disabled: true)
+    ];
+
+    private OrderCatalogsResponse? _catalogs;
+    private SaleCatalogsResponse? _saleCatalogs;
+    private CashSessionResponse? _cash;
+    private CustomerListItemResponse? _customer;
+    private string _saleType = SaleType.Cash;
+    private int? _priceListId;
+    private readonly List<SaleLineRow> _lines = [];
+    private readonly List<PaymentRow> _payments = [];
+    private string? _notes;
+    private string? _loadError;
+    private bool _saving;
+    private bool _submitted;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    private bool IsCredit => _saleType == SaleType.Credit;
+
+    private decimal Total => _lines.Sum(line => line.Amounts.Total);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        Task<ApiResult<OrderCatalogsResponse>> catalogs = OrdersApi.GetCatalogsAsync();
+        Task<ApiResult<SaleCatalogsResponse>> saleCatalogs = SalesApi.GetCatalogsAsync();
+        ApiResult<CashSessionResponse> cash = await CashApi.GetCurrentAsync();
+
+        ApiResult<OrderCatalogsResponse> loaded = await catalogs;
+        ApiResult<SaleCatalogsResponse> loadedSales = await saleCatalogs;
+
+        if (!loaded.Succeeded || !loadedSales.Succeeded)
+        {
+            _loadError = loaded.Succeeded ? loadedSales.Message : loaded.Message;
+            return;
+        }
+
+        _catalogs = loaded.Data!;
+        _saleCatalogs = loadedSales.Data!;
+        _cash = cash.Data;
+        _priceListId ??= _catalogs.DefaultPriceListId;
+    }
+
+    /// <summary>Al contado, el pago en efectivo se ajusta al total mientras solo haya uno.</summary>
+    private void LinesChanged()
+    {
+        if (!IsCredit && _payments.Count <= 1 && _cash is not null &&
+            _saleCatalogs?.PaymentMethods.FirstOrDefault(method => method.AllowsChange) is { } cash)
+        {
+            if (_payments.Count == 0)
+            {
+                _payments.Add(new PaymentRow { Method = cash });
+            }
+
+            if (_payments[0].Method?.AllowsChange == true)
+            {
+                _payments[0].Amount = Total;
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private void SaleTypeChanged(string value)
+    {
+        _saleType = value;
+
+        if (IsCredit)
+        {
+            _payments.Clear();
+        }
+        else
+        {
+            LinesChanged();
+        }
+    }
+
+    private void Clear()
+    {
+        _lines.Clear();
+        _payments.Clear();
+        _customer = null;
+        _notes = null;
+        _submitted = false;
+        _showInvalid = false;
+        _saveResult = null;
+    }
+
+    private async Task SellAsync()
+    {
+        _submitted = true;
+
+        if (_lines.Count == 0 || (IsCredit && _customer is null) ||
+            _lines.Any(line => line.Error(_catalogs!.MaximumDiscount) is not null) ||
+            PaymentRules.Error(_payments, Total, !IsCredit) is not null)
+        {
+            _showInvalid = true;
+            _saveResult = null;
+            StateHasChanged();
+            await JS.InvokeVoidAsync("tikalLibros.scrollToFirstError");
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        ApiResult<SaleResponse> result = await SalesApi.SellAsync(new DirectSaleRequest
+        {
+            CustomerId = _customer?.Id,
+            SaleType = _saleType,
+            PriceListId = _priceListId,
+            Notes = _notes,
+            Lines = _lines.Select(line => line.ToRequest()).ToList(),
+            Payments = _payments.Select(payment => payment.ToRequest()).ToList()
+        });
+
+        _saving = false;
+
+        if (!result.Succeeded)
+        {
+            _saveResult = result;
+            return;
+        }
+
+        SaleResponse sale = result.Data!;
+        string invoice = sale.Invoice is { } issued ? $" Factura {issued.Series}-{issued.Number} emitida." : string.Empty;
+        Snackbar.Add(sale.Change > 0
+            ? $"Venta {sale.Number} registrada. Entregue Q {sale.Change:N2} de cambio.{invoice}"
+            : $"Venta {sale.Number} registrada.{invoice}", Severity.Success, options => options.VisibleStateDuration = 8000);
+        Navigation.NavigateTo($"/ventas/{sale.Id}/factura");
+    }
+}

@@ -1,0 +1,248 @@
+@page "/pedidos"
+@attribute [RequirePermission(AppPermissions.OrdersView)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Sales
+@inject OrdersApi OrdersApi
+@inject SessionState Session
+@inject NavigationManager Navigation
+
+<PageTitle>Pedidos | Tikal Libros</PageTitle>
+
+<PageHeader Title="@(PendingOnly ? "Aprobaciones" : "Pedidos")"
+            Description="@(PendingOnly
+                ? "Pedidos con descuento mayor al permitido o que exceden el crédito del cliente. Ábralos para aprobarlos o rechazarlos."
+                : "Pedidos de clientes: al confirmarlos se valida y reserva la existencia; luego se facturan.")"
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        @if (!PendingOnly && Session.HasPermission(AppPermissions.OrdersCreate))
+        {
+            <MudButton Href="/pedidos/nuevo" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.NoteAdd">
+                Nuevo pedido
+            </MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+@if (!PendingOnly)
+{
+    <div class="stat-grid">
+        @foreach ((string code, string label, string tint, string icon) in Cards)
+        {
+            <StatCard Tint="@tint" Icon="@icon" Label="@label" Href="@($"/pedidos?estado={code}")"
+                      Loading="!_counts.ContainsKey(code) && _countError is null"
+                      Value="@(_counts.TryGetValue(code, out int count) ? count.ToString("N0") : null)" Error="@_countError" />
+        }
+    </div>
+}
+
+<Panel Title="@(PendingOnly ? "Por aprobar" : "Pedidos")" Icon="@Icons.Material.Outlined.Assignment"
+       Subtitle="Busque por número, cliente o NIT; los filtros se combinan.">
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_query.Search" Placeholder="Número, cliente o NIT"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="_ => ReloadAsync()"
+                      OnClearButtonClick="_ => FilterAsync(() => _query.Search = null)" MaxLength="100"
+                      aria-label="Buscar pedidos" Class="list-toolbar__search tl-filter-plain" />
+        @if (!PendingOnly)
+        {
+            <MudSelect T="string" Value="_query.Status" ValueChanged="value => FilterAsync(() => _query.Status = value)" Label="Estado"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                <MudSelectItem T="string" Value="@string.Empty">Todos</MudSelectItem>
+                @foreach (CatalogOptionResponse status in _statuses)
+                {
+                    <MudSelectItem T="string" Value="status.Code">@status.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        <MudSelect T="string" Value="_query.SaleType" ValueChanged="value => FilterAsync(() => _query.SaleType = value)" Label="Condición"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem T="string" Value="@string.Empty">Todas</MudSelectItem>
+            <MudSelectItem T="string" Value="@SaleType.Cash">Contado</MudSelectItem>
+            <MudSelectItem T="string" Value="@SaleType.Credit">Crédito</MudSelectItem>
+        </MudSelect>
+        <div class="list-toolbar__range">
+            <MudDateRangePicker DateRange="_range" DateRangeChanged="value => FilterAsync(() => _range = value)" Label="Fechas" Clearable="true"
+                                MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+        <MudNumericField T="decimal?" Value="_query.MinTotal" ValueChanged="value => FilterAsync(() => _query.MinTotal = value)"
+                         Label="Total desde" Min="0m" Format="N2" HideSpinButtons="true" DebounceInterval="500"
+                         Variant="Variant.Outlined" Margin="Margin.Dense" Class="list-toolbar__filter" />
+        <MudNumericField T="decimal?" Value="_query.MaxTotal" ValueChanged="value => FilterAsync(() => _query.MaxTotal = value)"
+                         Label="Total hasta" Min="0m" Format="N2" HideSpinButtons="true" DebounceInterval="500"
+                         Variant="Variant.Outlined" Margin="Margin.Dense" Class="list-toolbar__filter" />
+    </div>
+
+    @if (_loading && _page is null)
+    {
+        <LoadingState />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar los pedidos" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is { Items.Count: 0 })
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.Assignment" Title="@(PendingOnly ? "Nada por aprobar" : "No hay pedidos")"
+                    Message="@(PendingOnly ? "No hay pedidos esperando aprobación." : "Ajuste la búsqueda o registre un pedido.")" />
+    }
+    else if (_page is not null)
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading" Breakpoint="Breakpoint.None"
+                      Class="tl-table tl-table--clickable"
+                      OnRowClick="@((TableRowClickEventArgs<OrderListItemResponse> args) => Navigation.NavigateTo($"/pedidos/{args.Item!.Id}"))">
+                <HeaderContent>
+                    <MudTh>Pedido</MudTh>
+                    <MudTh>Cliente</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh Class="col-optional">Condición</MudTh>
+                    <MudTh Class="col-optional">Registró</MudTh>
+                    <MudTh Class="text-right">Total</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.Number</div>
+                        <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM/yyyy") · @context.Units.ToString("N0") unidad(es)</div>
+                    </MudTd>
+                    <MudTd>
+                        <div class="cell-primary">@context.Customer</div>
+                        <div class="cell-secondary">@context.CustomerCode</div>
+                    </MudTd>
+                    <MudTd>
+                        <DocumentStatus Code="@context.StatusCode" Text="@context.Status" />
+                        @if (context.StatusCode == OrderStatus.Reserved && context.ReservationExpiresAt is { } expires)
+                        {
+                            <div class="cell-secondary">hasta @expires.ToLocalTime().ToString("dd/MM HH:mm")</div>
+                        }
+                    </MudTd>
+                    <MudTd Class="col-optional">@context.SaleType</MudTd>
+                    <MudTd Class="col-optional">@context.Employee</MudTd>
+                    <MudTd Class="number">
+                        Q @context.Total.ToString("N2")
+                        @if (context.Discount > 0)
+                        {
+                            <div class="cell-secondary">desc. Q @context.Discount.ToString("N2")</div>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems" TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+</Panel>
+
+@code {
+    private static readonly (string Code, string Label, string Tint, string Icon)[] Cards =
+    [
+        (OrderStatus.PendingApproval, "Por aprobar", "peach", Icons.Material.Outlined.FactCheck),
+        (OrderStatus.Reserved, "Reservados por facturar", "sky", Icons.Material.Outlined.Inventory),
+        (OrderStatus.Draft, "Borradores", "sand", Icons.Material.Outlined.EditNote)
+    ];
+
+    /// <summary>Bandeja de aprobaciones (/pedidos/aprobaciones).</summary>
+    [Parameter]
+    public bool PendingOnly { get; set; }
+
+    [SupplyParameterFromQuery(Name = "estado")]
+    public string? StatusFromQuery { get; set; }
+
+    private List<BreadcrumbItem> _breadcrumbs = [];
+    private readonly OrderQuery _query = new() { Status = string.Empty, SaleType = string.Empty, PageSize = 15 };
+    private PagedResponse<OrderListItemResponse>? _page;
+    private IReadOnlyCollection<CatalogOptionResponse> _statuses = [];
+    private readonly Dictionary<string, int> _counts = [];
+    private string? _countError;
+    private DateRange? _range;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _breadcrumbs =
+        [
+            new("Inicio", "/"),
+            new("Ventas", null, disabled: true),
+            new(PendingOnly ? "Aprobaciones" : "Pedidos", null, disabled: true)
+        ];
+
+        _query.Status = PendingOnly ? OrderStatus.PendingApproval : StatusFromQuery?.ToUpperInvariant() ?? string.Empty;
+        _query.Page = 1;
+
+        Task load = LoadAsync();
+
+        if (!PendingOnly)
+        {
+            _statuses = (await OrdersApi.GetCatalogsAsync()).Data?.Statuses ?? [];
+            await LoadCountsAsync();
+        }
+
+        await load;
+    }
+
+    private async Task LoadCountsAsync()
+    {
+        foreach ((string code, _, _, _) in Cards)
+        {
+            ApiResult<PagedResponse<OrderListItemResponse>> result = await OrdersApi.GetPagedAsync(new OrderQuery { Status = code, PageSize = 1 });
+
+            if (!result.Succeeded)
+            {
+                _countError = result.Message;
+                return;
+            }
+
+            _counts[code] = result.Data!.TotalItems;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+        _loading = true;
+        _error = null;
+
+        _query.From = _range?.Start is { } start ? DateOnly.FromDateTime(start) : null;
+        _query.To = _range?.End is { } end ? DateOnly.FromDateTime(end) : null;
+
+        ApiResult<PagedResponse<OrderListItemResponse>> result = await OrdersApi.GetPagedAsync(_query, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _page = result.Data ?? _page;
+        _error = result.Succeeded ? null : result.Message;
+        _loading = false;
+    }
+
+    private Task ReloadAsync()
+    {
+        _query.Page = 1;
+        return LoadAsync();
+    }
+
+    private Task FilterAsync(Action change)
+    {
+        change();
+        return ReloadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _query.Page = page;
+        return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

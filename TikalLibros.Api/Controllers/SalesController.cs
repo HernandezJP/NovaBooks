@@ -59,6 +59,18 @@ public sealed class SalesController : ControllerBase
         return sale is null ? this.NotFoundProblem("La venta no existe.") : Ok(sale);
     }
 
+    /// <summary>Factura electrónica de la venta (certificación simulada) para mostrarla o imprimirla.</summary>
+    [HasPermission(SalesPermissions.View)]
+    [HttpGet("{id:int}/factura")]
+    [ProducesResponseType(typeof(InvoiceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<InvoiceResponse>> GetInvoice(int id, CancellationToken cancellationToken)
+    {
+        InvoiceResponse? invoice = await _sales.GetInvoiceAsync(id, cancellationToken);
+
+        return invoice is null ? this.NotFoundProblem("La venta no existe o no tiene factura.") : Ok(invoice);
+    }
+
     /// <summary>Venta de mostrador (sin pedido).</summary>
     [HasPermission(SalesPermissions.Create)]
     [HttpPost]

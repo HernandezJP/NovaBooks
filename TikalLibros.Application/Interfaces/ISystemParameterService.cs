@@ -13,6 +13,11 @@ public interface ISystemParameterService
         string key,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Valor de texto del parámetro; si no existe, el valor inicial.</summary>
+    Task<string> GetStringAsync(
+        string key,
+        CancellationToken cancellationToken = default);
+
     Task<OperationResult<SystemParameterResponse>> UpdateAsync(
         string key,
         UpdateSystemParameterRequest request,

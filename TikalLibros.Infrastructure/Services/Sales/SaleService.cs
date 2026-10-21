@@ -41,6 +41,7 @@ public sealed class SaleService : ISaleService
     private readonly OrderService _orders;
     private readonly CashService _cash;
     private readonly InventoryService _inventory;
+    private readonly InvoiceService _invoices;
     private readonly AuditTrail _audit;
 
     public SaleService(
@@ -50,6 +51,7 @@ public sealed class SaleService : ISaleService
         OrderService orders,
         CashService cash,
         InventoryService inventory,
+        InvoiceService invoices,
         AuditTrail audit)
     {
         _context = context;
@@ -58,6 +60,7 @@ public sealed class SaleService : ISaleService
         _orders = orders;
         _cash = cash;
         _inventory = inventory;
+        _invoices = invoices;
         _audit = audit;
     }
 
@@ -165,6 +168,7 @@ public sealed class SaleService : ISaleService
             sales = sales.Where(item =>
                 item.VEN_Numero.Contains(value) ||
                 (item.PedidoCliente != null && item.PedidoCliente.PED_Numero.Contains(value)) ||
+                (item.Factura != null && (item.Factura.FAC_Serie == value || item.Factura.FAC_Numero.ToString() == value)) ||
                 (item.Cliente != null &&
                  (item.Cliente.CLI_Codigo.Contains(value) ||
                   (item.Cliente.Persona.PersonaJuridica != null && item.Cliente.Persona.PersonaJuridica.PJU_RazonSocial.Contains(value)) ||
@@ -262,6 +266,15 @@ public sealed class SaleService : ISaleService
                 Annulled = item.VEN_Anulada,
                 AnnulledAt = item.VEN_FechaAnulacion,
                 AnnulmentReason = item.VEN_MotivoAnulacion,
+                Invoice = item.Factura == null ? null : new InvoiceSummaryResponse
+                {
+                    Series = item.Factura.FAC_Serie,
+                    Number = item.Factura.FAC_Numero,
+                    Authorization = item.Factura.FAC_NumeroAutorizacion.ToString(),
+                    IssuedAt = item.Factura.FAC_FechaEmision,
+                    IsDemo = item.Factura.FAC_EsDemostracion,
+                    Annulled = item.Factura.FAC_Anulada
+                },
                 Lines = item.Detalles
                     .OrderBy(line => line.VDE_NumeroLinea)
                     .Select(line => new SaleLineResponse
@@ -316,6 +329,11 @@ public sealed class SaleService : ISaleService
             {
                 line.UnitCost = null;
             }
+        }
+
+        if (response.Invoice is not null)
+        {
+            response.Invoice.Authorization = response.Invoice.Authorization.ToUpperInvariant();
         }
 
         response.CanPay = !response.Annulled && response.Balance > 0;
@@ -577,6 +595,9 @@ public sealed class SaleService : ISaleService
             cancellationToken);
     }
 
+    public Task<InvoiceResponse?> GetInvoiceAsync(int saleId, CancellationToken cancellationToken = default) =>
+        _invoices.GetAsync(saleId, cancellationToken);
+
     public async Task<OperationResult<SaleResponse>> AnnulAsync(
         int saleId,
         AnnulSaleRequest request,
@@ -599,6 +620,7 @@ public sealed class SaleService : ISaleService
                         .Include(item => item.EstadoVenta)
                         .Include(item => item.Detalles)
                         .Include(item => item.Pagos).ThenInclude(payment => payment.MovimientoCaja!).ThenInclude(movement => movement.AperturaCaja)
+                        .Include(item => item.Factura)
                         .FirstOrDefaultAsync(item => item.VEN_Venta == saleId, token);
 
                     if (sale is null)
@@ -681,6 +703,11 @@ public sealed class SaleService : ISaleService
                         order.PED_FechaModificacion = now;
                     }
 
+                    if (sale.Factura is { FAC_Anulada: false } invoice)
+                    {
+                        InvoiceService.Annul(invoice, reason, now);
+                    }
+
                     sale.VEN_Anulada = true;
                     sale.VEN_FechaAnulacion = now;
                     sale.VEN_MotivoAnulacion = reason;
@@ -691,7 +718,9 @@ public sealed class SaleService : ISaleService
                         AuditActions.Annul,
                         SaleEntity,
                         sale.VEN_Venta.ToString(),
-                        $"Anuló la venta {sale.VEN_Numero} por Q{sale.VEN_Total:N2}; el inventario y los cobros se revirtieron: {reason}",
+                        $"Anuló la venta {sale.VEN_Numero} por Q{sale.VEN_Total:N2}" +
+                        (sale.Factura is null ? "" : $" y su factura {sale.Factura.FAC_Serie}-{sale.Factura.FAC_Numero}") +
+                        $"; el inventario y los cobros se revirtieron: {reason}",
                         [AuditChange.Of("Estado", stateBefore, "Anulada")]);
 
                     await _context.SaveChangesAsync(token);
@@ -839,6 +868,9 @@ public sealed class SaleService : ISaleService
         {
             await AddPaymentsAsync(sale, session, payments.Data, employee.Id, cancellationToken);
         }
+
+        // Factura electrónica (certificación simulada) en la misma transacción.
+        await _invoices.IssueAsync(sale, cancellationToken);
 
         await UpdateStatusAsync(sale, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
@@ -1001,7 +1033,8 @@ public sealed class SaleService : ISaleService
         AuditChange.Of("Total", null, sale.VEN_Total),
         AuditChange.Of("Descuento", null, sale.VEN_Descuento),
         AuditChange.Of("Pagado", null, sale.VEN_TotalPagado),
-        AuditChange.Of("Unidades", null, sale.Detalles.Sum(line => line.VDE_Cantidad))
+        AuditChange.Of("Unidades", null, sale.Detalles.Sum(line => line.VDE_Cantidad)),
+        AuditChange.Of("Factura", null, sale.Factura is null ? null : $"{sale.Factura.FAC_Serie}-{sale.Factura.FAC_Numero}")
     ];
 
     private async Task<int> StatusIdAsync(string code, CancellationToken cancellationToken) =>

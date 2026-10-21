@@ -61,4 +61,22 @@ public static class AppPermissions
     public const string OrdersCancel = "Pedidos.Cancelar";
 
     public const string ConfigurationParameters = "Configuracion.Parametros";
+
+    public const string SalesView = "Ventas.Ver";
+    public const string SalesCreate = "Ventas.Crear";
+    public const string SalesCancel = "Ventas.Anular";
+    public const string SalesApplyDiscount = "Ventas.AplicarDescuento";
+    public const string SalesSellOnCredit = "Ventas.VenderCredito";
+
+    public const string CashView = "Caja.Ver";
+    public const string CashOpen = "Caja.Abrir";
+    public const string CashClose = "Caja.Cerrar";
+    public const string CashCreateIncome = "Caja.RegistrarIngreso";
+    public const string CashCreateExpense = "Caja.RegistrarEgreso";
+    public const string CashCancelMovement = "Caja.AnularMovimiento";
+
+    public const string ReportsSales = "Reportes.Ventas";
+    public const string ReportsInventory = "Reportes.Inventario";
+    public const string ReportsProfitability = "Reportes.Rentabilidad";
+    public const string ReportsAudit = "Reportes.Auditoria";
 }

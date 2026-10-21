@@ -15,6 +15,9 @@ public static class SystemParameterKeys
     /// <summary>Días que un pedido reservado aparta la mercadería.</summary>
     public const string ReservationDays = "PEDIDOS_DIAS_RESERVA";
 
+    /// <summary>NIT de la empresa que aparece como emisor en las facturas.</summary>
+    public const string InvoiceIssuerNit = "FACTURA_NIT_EMISOR";
+
     public static readonly IReadOnlyList<SystemParameterDefinition> Defaults =
     [
         new(DiscountWithoutApproval, "DECIMAL", "10",
@@ -22,6 +25,8 @@ public static class SystemParameterKeys
         new(MaximumDiscount, "DECIMAL", "50",
             "Porcentaje máximo de descuento por línea, aun con aprobación."),
         new(ReservationDays, "INTEGER", "3",
-            "Días que un pedido reservado aparta la mercadería antes de vencer.")
+            "Días que un pedido reservado aparta la mercadería antes de vencer."),
+        new(InvoiceIssuerNit, "STRING", "4567890K",
+            "NIT de la empresa como emisor de las facturas electrónicas.")
     ];
 }

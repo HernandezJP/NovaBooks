@@ -1,0 +1,137 @@
+@page "/caja"
+@attribute [RequirePermission(AppPermissions.CashOpen)]
+@using TikalLibros.Application.DTOs.Cash
+@inject CashApi CashApi
+@inject SessionState Session
+@inject ISnackbar Snackbar
+
+<PageTitle>Mi caja | Tikal Libros</PageTitle>
+
+<PageHeader Title="Mi caja"
+            Description="Abra su caja con el monto inicial, cobre en ella y ciérrela con el arqueo al final del turno."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        @if (_session is not null && Session.HasPermission(AppPermissions.SalesCreate))
+        {
+            <MudButton Href="/ventas/nueva" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.PointOfSale">
+                Ir al punto de venta
+            </MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+@if (_error is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar la caja" Message="@_error" OnRetry="LoadAsync" /></div>
+}
+else if (_catalogs is null)
+{
+    <div class="panel"><LoadingState Rows="4" /></div>
+}
+else if (_session is null || !_session.IsOpen)
+{
+    <div class="layout-stack">
+        @if (_session is { IsOpen: false })
+        {
+            <MudAlert Severity="Severity.Success" Dense="true">
+                Cerró @_session.CashRegister. <a href="@($"/caja/aperturas/{_session.Id}")">Ver el arqueo</a>.
+            </MudAlert>
+        }
+
+        <Panel Title="Abrir caja" Icon="@Icons.Material.Outlined.LockOpen" Subtitle="Una caja se abre una sola vez a la vez, y cada cajero puede tener una sola abierta.">
+            <EditForm Model="_open" OnValidSubmit="OpenAsync">
+                <DataAnnotationsValidator />
+                <FormErrors Result="_openResult" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+                <fieldset disabled="@_saving" class="form-fieldset">
+                    <div class="form-grid">
+                        <MudSelect T="int?" @bind-Value="_open.CashRegisterId" For="@(() => _open.CashRegisterId)" Label="Caja *"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (CashRegisterResponse register in _catalogs.CashRegisters)
+                            {
+                                <MudSelectItem T="int?" Value="register.Id" Disabled="register.OpenSessionId is not null">
+                                    @register.Name @(register.OpenSessionId is null ? "" : $"(abierta por {register.OpenedBy})")
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudNumericField T="decimal?" @bind-Value="_open.InitialAmount" For="@(() => _open.InitialAmount)"
+                                         Label="Monto inicial (Q) *" Min="0m" Max="100000m" Format="N2" HideSpinButtons="true"
+                                         HelperText="Efectivo con que empieza (fondo de cambio)."
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </div>
+                    <MudTextField @bind-Value="_open.Notes" For="@(() => _open.Notes)" Label="Observaciones"
+                                  MaxLength="1000" Class="mt-3 tl-filter-plain" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </fieldset>
+                <div class="form-actions">
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Outlined.LockOpen" Disabled="_saving">
+                        @(_saving ? "Abriendo…" : "Abrir caja")
+                    </MudButton>
+                </div>
+            </EditForm>
+        </Panel>
+    </div>
+}
+else
+{
+    <div class="layout-stack">
+        <CashSessionView Session="_session" SessionChanged="session => _session = session" MovementTypes="_catalogs.MovementTypes" />
+    </div>
+}
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Ventas", null, disabled: true),
+        new("Mi caja", null, disabled: true)
+    ];
+
+    private CashCatalogsResponse? _catalogs;
+    private CashSessionResponse? _session;
+    private readonly OpenCashSessionRequest _open = new() { InitialAmount = 0m };
+    private IApiResultView? _openResult;
+    private string? _error;
+    private bool _saving;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+
+        Task<ApiResult<CashCatalogsResponse>> catalogs = CashApi.GetCatalogsAsync();
+        ApiResult<CashSessionResponse> current = await CashApi.GetCurrentAsync();
+        ApiResult<CashCatalogsResponse> loaded = await catalogs;
+
+        if (!loaded.Succeeded || !current.Succeeded)
+        {
+            _error = loaded.Succeeded ? current.Message : loaded.Message;
+            return;
+        }
+
+        _catalogs = loaded.Data!;
+        _session = current.Data;
+        _open.CashRegisterId ??= _catalogs.CashRegisters.FirstOrDefault(register => register.OpenSessionId is null)?.Id;
+    }
+
+    private async Task OpenAsync()
+    {
+        _saving = true;
+        _openResult = null;
+        ApiResult<CashSessionResponse> result = await CashApi.OpenAsync(_open);
+        _saving = false;
+
+        if (result.Succeeded)
+        {
+            _session = result.Data;
+            Snackbar.Add($"Caja {_session!.CashRegister} abierta con Q {_session.InitialAmount:N2}.", Severity.Success);
+        }
+        else
+        {
+            _openResult = result;
+            ApiResult<CashCatalogsResponse> catalogs = await CashApi.GetCatalogsAsync();
+            _catalogs = catalogs.Data ?? _catalogs;
+        }
+    }
+}

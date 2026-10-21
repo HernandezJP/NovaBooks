@@ -1,0 +1,242 @@
+@* Una apertura de caja: totales, desglose por método, arqueo (si se cerró)
+   y movimientos, con las acciones que el usuario puede hacer. *@
+@using TikalLibros.Application.DTOs.Cash
+@inject CashApi CashApi
+@inject SessionState User
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<div class="stat-grid">
+    <StatCard Tint="sand" Icon="@Icons.Material.Outlined.Savings" Label="Monto inicial" Value="@Money(Session.InitialAmount)" />
+    <StatCard Tint="mint" Icon="@Icons.Material.Outlined.TrendingUp" Label="Ingresos en efectivo" Value="@Money(Session.CashIncome)" />
+    <StatCard Tint="peach" Icon="@Icons.Material.Outlined.TrendingDown" Label="Egresos en efectivo" Value="@Money(Session.CashExpense)" />
+    <StatCard Tint="sky" Icon="@Icons.Material.Outlined.Payments" Label="Efectivo esperado" Value="@Money(Session.ExpectedCash)" />
+</div>
+
+<div class="layout-split">
+    <Panel Title="Apertura" Icon="@Icons.Material.Outlined.PointOfSale">
+        <dl class="detail-list">
+            <dt>Caja</dt>
+            <dd>@Session.CashRegister</dd>
+            <dt>Cajero</dt>
+            <dd>@Session.Employee</dd>
+            <dt>Abierta</dt>
+            <dd>@Session.OpenedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+            <dt>Estado</dt>
+            <dd><DocumentStatus Code="@(Session.IsOpen ? "EMITIDA" : "PROCESADA")" Text="@(Session.IsOpen ? "Abierta" : "Cerrada")" /></dd>
+            @if (!string.IsNullOrWhiteSpace(Session.Notes))
+            {
+                <dt>Observaciones</dt>
+                <dd><p class="notes-block">@Session.Notes</p></dd>
+            }
+        </dl>
+
+        @if (Session.IsOpen)
+        {
+            <div class="form-actions">
+                @if (Session.IsMine && User.HasPermission(AppPermissions.CashCreateIncome))
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.AddCircleOutline"
+                               OnClick="() => MovementAsync(1)">
+                        Ingreso
+                    </MudButton>
+                }
+                @if (Session.IsMine && User.HasPermission(AppPermissions.CashCreateExpense))
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.RemoveCircleOutline"
+                               OnClick="() => MovementAsync(-1)">
+                        Egreso
+                    </MudButton>
+                }
+                @if (CanClose)
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Lock"
+                               OnClick="CloseAsync">
+                        Cerrar caja
+                    </MudButton>
+                }
+            </div>
+        }
+    </Panel>
+
+    <Panel Title="Por método de pago" Icon="@Icons.Material.Outlined.CreditCard" Subtitle="Sin movimientos anulados.">
+        @if (Session.Methods.Count == 0)
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.CreditCard" Title="Sin movimientos" Message="Todavía no hay cobros ni movimientos." />
+        }
+        else
+        {
+            <MudSimpleTable Dense="true" Elevation="0" Class="tl-table">
+                <thead><tr><th>Método</th><th class="text-right">Ingresos</th><th class="text-right">Egresos</th><th class="text-right">Neto</th></tr></thead>
+                <tbody>
+                    @foreach (CashMethodSummaryResponse method in Session.Methods)
+                    {
+                        <tr>
+                            <td>@method.Name</td>
+                            <td class="number">@method.Income.ToString("N2")</td>
+                            <td class="number">@method.Expense.ToString("N2")</td>
+                            <td class="number">@method.Net.ToString("N2")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </Panel>
+</div>
+
+@if (Session.Closing is { } closing)
+{
+    <Panel Title="Arqueo" Icon="@Icons.Material.Outlined.FactCheck"
+           Subtitle="@($"Cerrada el {closing.ClosedAt.ToLocalTime():dd/MM/yyyy HH:mm} por {closing.ClosedBy}")">
+        <MudSimpleTable Dense="true" Elevation="0" Class="tl-table">
+            <thead><tr><th>Método</th><th class="text-right">Sistema</th><th class="text-right">Contado</th><th class="text-right">Diferencia</th></tr></thead>
+            <tbody>
+                @foreach (CashClosingLineResponse line in closing.Lines)
+                {
+                    <tr>
+                        <td>@line.PaymentMethod</td>
+                        <td class="number">@line.System.ToString("N2")</td>
+                        <td class="number">@line.Counted.ToString("N2")</td>
+                        <td class="number @(line.Difference < 0 ? "qty-out" : line.Difference > 0 ? "qty-in" : "")">@line.Difference.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        @if (!string.IsNullOrWhiteSpace(closing.Notes))
+        {
+            <p class="notes-block mt-3">@closing.Notes</p>
+        }
+    </Panel>
+}
+
+<Panel Title="Movimientos" Icon="@Icons.Material.Outlined.SwapVert" Subtitle="Cobros de ventas y movimientos manuales; los anulados se muestran tachados.">
+    @if (Session.Movements.Count == 0)
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.SwapVert" Title="Sin movimientos" Message="Los cobros de ventas aparecerán aquí." />
+    }
+    else
+    {
+        <div class="table-scroll">
+            <MudTable Items="Session.Movements" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table"
+                      RowClassFunc="@((CashMovementResponse item, int _) => item.Annulled ? "row-muted" : string.Empty)">
+                <HeaderContent>
+                    <MudTh>Movimiento</MudTh>
+                    <MudTh>Concepto</MudTh>
+                    <MudTh Class="col-optional">Método</MudTh>
+                    <MudTh Class="text-right">Monto</MudTh>
+                    <MudTh Class="tl-table__actions"></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.Number</div>
+                        <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM HH:mm") · @context.Type</div>
+                    </MudTd>
+                    <MudTd>
+                        @if (context.SaleId is int saleId)
+                        {
+                            <a href="@($"/ventas/{saleId}")">@context.Concept</a>
+                        }
+                        else
+                        {
+                            @context.Concept
+                        }
+                        @if (context.Annulled)
+                        {
+                            <div class="cell-secondary">Anulado: @context.AnnulmentReason</div>
+                        }
+                    </MudTd>
+                    <MudTd Class="col-optional">@context.PaymentMethod</MudTd>
+                    <MudTd Class="@($"number {(context.Nature > 0 ? "qty-in" : "qty-out")}")">
+                        @(context.Nature > 0 ? "+" : "−")@context.Amount.ToString("N2")
+                    </MudTd>
+                    <MudTd Class="tl-table__actions">
+                        @if (context.CanAnnul && User.HasPermission(AppPermissions.CashCancelMovement))
+                        {
+                            <MudIconButton Icon="@Icons.Material.Outlined.Block" Size="Size.Small" Color="Color.Error"
+                                           aria-label="@($"Anular {context.Number}")" OnClick="() => AnnulAsync(context)" />
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+    }
+</Panel>
+
+@code {
+    [Parameter, EditorRequired]
+    public CashSessionResponse Session { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback<CashSessionResponse> SessionChanged { get; set; }
+
+    [Parameter]
+    public IReadOnlyCollection<CashMovementTypeResponse> MovementTypes { get; set; } = [];
+
+    // Cierra quien la abrió; la caja de otro, solo un supervisor.
+    private bool CanClose =>
+        User.HasPermission(AppPermissions.CashClose) &&
+        (Session.IsMine || User.HasPermission(AppPermissions.CashCancelMovement));
+
+    private static string Money(decimal value) => $"Q {value:N2}";
+
+    private async Task MovementAsync(int nature)
+    {
+        DialogParameters<CashMovementDialog> parameters = new()
+        {
+            { dialog => dialog.SessionId, Session.Id },
+            { dialog => dialog.Nature, nature },
+            { dialog => dialog.Available, Session.ExpectedCash },
+            { dialog => dialog.Types, MovementTypes }
+        };
+
+        CashSessionResponse? updated = await Dialogs.ShowFormAsync<CashMovementDialog, CashSessionResponse>(
+            nature > 0 ? "Ingreso de efectivo" : "Egreso de efectivo", parameters);
+
+        if (updated is not null)
+        {
+            Snackbar.Add(nature > 0 ? "Ingreso registrado." : "Egreso registrado.", Severity.Success);
+            await SessionChanged.InvokeAsync(updated);
+        }
+    }
+
+    private async Task AnnulAsync(CashMovementResponse movement)
+    {
+        string? reason = await Dialogs.AskReasonAsync(
+            $"Anular {movement.Number}",
+            $"El movimiento de Q {movement.Amount:N2} dejará de contar en el efectivo esperado.",
+            "Anular movimiento");
+
+        if (reason is null)
+        {
+            return;
+        }
+
+        ApiResult<CashSessionResponse> result = await CashApi.AnnulMovementAsync(movement.Id, reason);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Movimiento {movement.Number} anulado.", Severity.Success);
+            await SessionChanged.InvokeAsync(result.Data!);
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        DialogParameters<CloseCashDialog> parameters = new() { { dialog => dialog.Session, Session } };
+
+        CashSessionResponse? closed = await Dialogs.ShowFormAsync<CloseCashDialog, CashSessionResponse>(
+            $"Cerrar {Session.CashRegister}", parameters);
+
+        if (closed is not null)
+        {
+            Snackbar.Add(closed.Closing is { Difference: 0 }
+                ? "Caja cerrada; el arqueo cuadró."
+                : $"Caja cerrada con diferencia de Q {closed.Closing?.Difference:N2}.", Severity.Success);
+            await SessionChanged.InvokeAsync(closed);
+        }
+    }
+}

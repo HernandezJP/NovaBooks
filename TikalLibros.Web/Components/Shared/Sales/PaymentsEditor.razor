@@ -1,0 +1,129 @@
+@* Pagos de una venta o abono: uno o varios métodos, cambio en efectivo y
+   datos que exige cada método (últimos 4 dígitos, autorización, referencia). *@
+@using TikalLibros.Application.DTOs.Sales
+
+<div class="payments">
+    <dl class="payments__summary">
+        <div><dt>A cobrar</dt><dd>Q @Due.ToString("N2")</dd></div>
+        <div><dt>Pagos</dt><dd>Q @Paid.ToString("N2")</dd></div>
+        @if (Remaining > 0)
+        {
+            <div class="payments__pending"><dt>@(RequireFull ? "Falta" : "Queda al crédito")</dt><dd>Q @Remaining.ToString("N2")</dd></div>
+        }
+        else if (Remaining < 0)
+        {
+            <div class="payments__excess"><dt>Excede</dt><dd>Q @((-Remaining).ToString("N2"))</dd></div>
+        }
+        @if (TotalChange > 0)
+        {
+            <div class="payments__change"><dt>Cambio</dt><dd>Q @TotalChange.ToString("N2")</dd></div>
+        }
+    </dl>
+
+    @foreach (PaymentRow payment in Payments)
+    {
+        <div class="payments__row" @key="payment">
+            <MudSelect T="PaymentMethodResponse" Value="payment.Method" ValueChanged="method => Change(() => payment.Method = method)"
+                       ToStringFunc="@(method => method?.Name)" Label="Método *" Disabled="Disabled"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="payments__method">
+                @foreach (PaymentMethodResponse method in Methods)
+                {
+                    <MudSelectItem T="PaymentMethodResponse" Value="method">@method.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudNumericField T="decimal?" Value="payment.Amount" ValueChanged="value => Change(() => payment.Amount = value)"
+                             Label="Monto *" Min="0.01m" Max="1000000m" Format="N2" HideSpinButtons="true" Immediate="true"
+                             Disabled="Disabled" Variant="Variant.Outlined" Margin="Margin.Dense" Class="payments__amount" />
+            @if (payment.IsCash)
+            {
+                <MudNumericField T="decimal?" Value="payment.Received" ValueChanged="value => Change(() => payment.Received = value)"
+                                 Label="Recibido" Min="0m" Max="1000000m" Format="N2" HideSpinButtons="true" Immediate="true"
+                                 HelperText="@(payment.Change > 0 ? $"Cambio Q {payment.Change:N2}" : "Si es mayor, se da cambio.")"
+                                 Disabled="Disabled" Variant="Variant.Outlined" Margin="Margin.Dense" Class="payments__amount" />
+            }
+            else if (payment.IsCard)
+            {
+                <MudTextField T="string" @bind-Value="payment.LastFourDigits" Label="Últimos 4 dígitos *" MaxLength="4"
+                              InputMode="InputMode.numeric" Class="payments__short tl-filter-digits" Disabled="Disabled"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+            else if (payment.Method?.RequiresReference == true)
+            {
+                <MudTextField T="string" @bind-Value="payment.Reference" Label="Referencia *" MaxLength="50"
+                              Class="payments__ref tl-filter-series" Disabled="Disabled"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+            @if (payment.Method?.RequiresAuthorization == true)
+            {
+                <MudTextField T="string" @bind-Value="payment.Authorization" Label="Autorización *" MaxLength="20"
+                              Class="payments__short tl-filter-series" Disabled="Disabled"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            }
+            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error" Disabled="Disabled"
+                           aria-label="Quitar pago" OnClick="() => Change(() => Payments.Remove(payment))" />
+            @if (Submitted && payment.Error is { } error)
+            {
+                <div class="field-error payments__error">@error</div>
+            }
+        </div>
+    }
+
+    <div class="payments__actions">
+        @foreach (PaymentMethodResponse method in Methods)
+        {
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="@(Disabled || Remaining <= 0)"
+                       StartIcon="@Icons.Material.Outlined.Add" OnClick="() => AddAsync(method)">
+                @method.Name
+            </MudButton>
+        }
+    </div>
+
+    @if (Submitted && Error is { } summaryError)
+    {
+        <div class="field-error">@summaryError</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyCollection<PaymentMethodResponse> Methods { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public List<PaymentRow> Payments { get; set; } = [];
+
+    [Parameter]
+    public EventCallback PaymentsChanged { get; set; }
+
+    /// <summary>Saldo a cobrar.</summary>
+    [Parameter]
+    public decimal Due { get; set; }
+
+    /// <summary>Al contado los pagos deben cubrir el total.</summary>
+    [Parameter]
+    public bool RequireFull { get; set; } = true;
+
+    [Parameter]
+    public bool Submitted { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    private decimal Paid => Payments.Sum(payment => payment.Amount ?? 0m);
+
+    private decimal Remaining => Due - Paid;
+
+    private decimal TotalChange => Payments.Sum(payment => payment.Change);
+
+    /// <summary>Error general de los pagos (o null si son válidos).</summary>
+    public string? Error => PaymentRules.Error(Payments, Due, RequireFull);
+
+    /// <summary>Agrega un pago con lo que falta cobrar.</summary>
+    private Task AddAsync(PaymentMethodResponse method) =>
+        Change(() => Payments.Add(new PaymentRow { Method = method, Amount = Math.Max(Remaining, 0m) }));
+
+    private Task Change(Action change)
+    {
+        change();
+        return PaymentsChanged.InvokeAsync();
+    }
+}

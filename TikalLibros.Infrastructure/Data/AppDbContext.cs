@@ -232,6 +232,9 @@ public class AppDbContext
     public DbSet<PB_VENTA_PAGO> VentasPagos =>
         Set<PB_VENTA_PAGO>();
 
+    public DbSet<PB_FACTURA_VENTA> FacturasVenta =>
+        Set<PB_FACTURA_VENTA>();
+
     public DbSet<PB_ESTADO_DEVOLUCION> EstadosDevolucion =>
         Set<PB_ESTADO_DEVOLUCION>();
 

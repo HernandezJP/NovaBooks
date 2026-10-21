@@ -1,0 +1,259 @@
+@page "/ventas/{Id:int}"
+@attribute [RequirePermission(AppPermissions.SalesView)]
+@using TikalLibros.Application.DTOs.Sales
+@inject SalesApi SalesApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_sale is null ? "Venta" : $"Venta {_sale.Number}") | Tikal Libros</PageTitle>
+
+<PageHeader Title="@(_sale is null ? "Venta" : $"Venta {_sale.Number}")" Description="@_sale?.Customer" Breadcrumbs="_breadcrumbs">
+    <Actions>
+        @if (_sale is not null)
+        {
+            <DocumentStatus Code="@_sale.StatusCode" Text="@_sale.Status" />
+        }
+    </Actions>
+</PageHeader>
+
+@if (_error is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar la venta" Message="@_error" OnRetry="LoadAsync" /></div>
+}
+else if (_sale is null)
+{
+    <div class="panel"><LoadingState Rows="6" /></div>
+}
+else
+{
+    <div class="layout-stack">
+        @if (_sale.Annulled)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">
+                Anulada el @_sale.AnnulledAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm"): @_sale.AnnulmentReason.
+                El inventario y los cobros se revirtieron.
+            </MudAlert>
+        }
+
+        <div class="stat-grid">
+            <StatCard Tint="sky" Icon="@Icons.Material.Outlined.ReceiptLong" Label="Total" Value="@($"Q {_sale.Total:N2}")" />
+            <StatCard Tint="mint" Icon="@Icons.Material.Outlined.Payments" Label="Pagado" Value="@($"Q {_sale.Paid:N2}")" />
+            <StatCard Tint="peach" Icon="@Icons.Material.Outlined.HourglassBottom" Label="Saldo" Value="@($"Q {_sale.Balance:N2}")"
+                      Caption="@(_sale.CreditDueDate is { } due ? $"vence el {due:dd/MM/yyyy}" : null)" />
+            @if (_sale.Change > 0)
+            {
+                <StatCard Tint="sand" Icon="@Icons.Material.Outlined.CurrencyExchange" Label="Cambio entregado" Value="@($"Q {_sale.Change:N2}")" />
+            }
+        </div>
+
+        <div class="panel">
+            <dl class="detail-list">
+                <dt>Cliente</dt>
+                <dd>@_sale.Customer @(_sale.CustomerNit is null ? "" : $"· NIT {_sale.CustomerNit}")</dd>
+                <dt>Fecha</dt>
+                <dd>@_sale.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @_sale.Employee</dd>
+                <dt>Factura</dt>
+                <dd>
+                    @if (_sale.Invoice is { } invoice)
+                    {
+                        <span>Serie @invoice.Series · número @invoice.Number</span>
+                        @if (invoice.Annulled)
+                        {
+                            <DocumentStatus Code="ANULADA" Text="Anulada" />
+                        }
+                        <div class="cell-secondary">Autorización @invoice.Authorization @(invoice.IsDemo ? "· demostración, sin validez fiscal" : "")</div>
+                    }
+                    else
+                    {
+                        <span>Sin factura</span>
+                    }
+                </dd>
+                <dt>Condición</dt>
+                <dd>@_sale.SaleType</dd>
+                @if (_sale.OrderId is int orderId)
+                {
+                    <dt>Pedido</dt>
+                    <dd><a href="@($"/pedidos/{orderId}")">@_sale.OrderNumber</a></dd>
+                }
+                <dt>Caja</dt>
+                <dd>@(_sale.CashRegister ?? "—")</dd>
+                <dt>Salida de inventario</dt>
+                <dd>@(_sale.InventoryMovementNumber ?? "—") · @_sale.Warehouse</dd>
+                @if (!string.IsNullOrWhiteSpace(_sale.Notes))
+                {
+                    <dt>Observaciones</dt>
+                    <dd><p class="notes-block">@_sale.Notes</p></dd>
+                }
+            </dl>
+
+            <div class="form-actions">
+                <MudButton Href="/ventas" Variant="Variant.Text">Volver</MudButton>
+                @if (_sale.Invoice is not null)
+                {
+                    <MudButton Href="@($"/ventas/{_sale.Id}/factura")" Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Outlined.Receipt">
+                        Ver factura
+                    </MudButton>
+                }
+                @if (_sale.CanAnnul && Session.HasPermission(AppPermissions.SalesCancel))
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Block" OnClick="AnnulAsync">
+                        Anular venta
+                    </MudButton>
+                }
+                @if (_sale.CanPay && Session.HasPermission(AppPermissions.SalesCreate))
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Payments" OnClick="PayAsync">
+                        Registrar abono
+                    </MudButton>
+                }
+            </div>
+        </div>
+
+        <Panel Title="Libros" Icon="@Icons.Material.Outlined.MenuBook" Subtitle="Precios con IVA incluido.">
+            <div class="table-scroll">
+                <MudTable Items="_sale.Lines" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>Libro</MudTh>
+                        <MudTh Class="text-right">Cantidad</MudTh>
+                        <MudTh Class="text-right">Precio</MudTh>
+                        <MudTh Class="text-right col-optional">Desc.</MudTh>
+                        @if (ShowCosts)
+                        {
+                            <MudTh Class="text-right col-optional">Costo</MudTh>
+                        }
+                        <MudTh Class="text-right">Total</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary">@context.Title</div>
+                            <div class="cell-secondary">@context.BookCode</div>
+                        </MudTd>
+                        <MudTd Class="number">@context.Quantity.ToString("N0")</MudTd>
+                        <MudTd Class="number">@context.UnitPrice.ToString("N2")</MudTd>
+                        <MudTd Class="number col-optional">@context.DiscountPercent.ToString("0.##") %</MudTd>
+                        @if (ShowCosts)
+                        {
+                            <MudTd Class="number col-optional">@context.UnitCost?.ToString("N2")</MudTd>
+                        }
+                        <MudTd Class="number">@context.Total.ToString("N2")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+            <dl class="doc-totals">
+                <dt>Subtotal</dt><dd>Q @_sale.Subtotal.ToString("N2")</dd>
+                <dt>Descuento</dt><dd>− Q @_sale.Discount.ToString("N2")</dd>
+                <dt>IVA incluido</dt><dd>Q @_sale.Tax.ToString("N2")</dd>
+                <dt class="doc-totals__grand">Total</dt><dd class="doc-totals__grand">Q @_sale.Total.ToString("N2")</dd>
+            </dl>
+        </Panel>
+
+        <Panel Title="Pagos" Icon="@Icons.Material.Outlined.Payments">
+            @if (_sale.Payments.Count == 0)
+            {
+                <EmptyState Icon="@Icons.Material.Outlined.Payments" Title="Sin pagos" Message="Venta al crédito sin abonos." />
+            }
+            else
+            {
+                <MudTable Items="_sale.Payments" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table"
+                          RowClassFunc="@((SalePaymentResponse item, int _) => item.Annulled ? "row-muted" : string.Empty)">
+                    <HeaderContent>
+                        <MudTh>Método</MudTh>
+                        <MudTh Class="col-optional">Detalle</MudTh>
+                        <MudTh Class="text-right">Monto</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary">@context.PaymentMethod</div>
+                            <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @context.CashMovementNumber</div>
+                        </MudTd>
+                        <MudTd Class="col-optional">
+                            @if (context.LastFourDigits is not null) { <span>Tarjeta ···· @context.LastFourDigits · aut. @context.Authorization</span> }
+                            else if (context.Reference is not null) { <span>Ref. @context.Reference</span> }
+                            else if (context.Change > 0) { <span>Recibido Q @context.Received.ToString("N2") · cambio Q @context.Change.ToString("N2")</span> }
+                        </MudTd>
+                        <MudTd Class="number">@context.Amount.ToString("N2")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </Panel>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Ventas", "/ventas"),
+        new("Detalle", null, disabled: true)
+    ];
+
+    private SaleResponse? _sale;
+    private string? _error;
+
+    private bool ShowCosts => _sale?.Lines.Any(line => line.UnitCost is not null) == true;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        ApiResult<SaleResponse> result = await SalesApi.GetAsync(Id);
+        _sale = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+
+    private async Task PayAsync()
+    {
+        ApiResult<SaleCatalogsResponse> catalogs = await SalesApi.GetCatalogsAsync();
+
+        if (!catalogs.Succeeded)
+        {
+            Snackbar.Add(catalogs.Message, Severity.Error);
+            return;
+        }
+
+        DialogParameters<AddPaymentsDialog> parameters = new()
+        {
+            { dialog => dialog.Sale, _sale! },
+            { dialog => dialog.Methods, catalogs.Data!.PaymentMethods }
+        };
+
+        SaleResponse? updated = await Dialogs.ShowFormAsync<AddPaymentsDialog, SaleResponse>($"Abono a {_sale!.Number}", parameters);
+
+        if (updated is not null)
+        {
+            _sale = updated;
+            Snackbar.Add(updated.Balance == 0 ? "Abono registrado; la venta quedó pagada." : $"Abono registrado; saldo Q {updated.Balance:N2}.", Severity.Success);
+        }
+    }
+
+    private async Task AnnulAsync()
+    {
+        string? reason = await Dialogs.AskReasonAsync(
+            $"Anular venta {_sale!.Number}",
+            "Los libros vuelven al inventario, los cobros se anulan en la caja y la factura queda anulada. Si la caja ya se cerró, no podrá anularse.",
+            "Anular venta");
+
+        if (reason is null)
+        {
+            return;
+        }
+
+        ApiResult<SaleResponse> result = await SalesApi.AnnulAsync(_sale.Id, reason);
+
+        if (result.Succeeded)
+        {
+            _sale = result.Data;
+            Snackbar.Add("Venta anulada; el inventario y la caja se revirtieron.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error, options => options.VisibleStateDuration = 10000);
+        }
+    }
+}

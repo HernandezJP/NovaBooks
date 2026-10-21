@@ -1,0 +1,78 @@
+@* Factura un pedido reservado: cobra en la caja abierta y descuenta el inventario. *@
+@using TikalLibros.Application.DTOs.Sales
+@inject SalesApi SalesApi
+
+<MudDialog>
+    <DialogContent>
+        <FormErrors Result="_result" />
+        <MudText Typo="Typo.body2" Class="mb-3">
+            @Order.Customer · @Order.Lines.Count libro(s) · total <strong>Q @Order.Total.ToString("N2")</strong>
+            @(IsCredit ? "· al crédito: puede registrar un abono inicial o dejarlo todo al crédito." : "")
+        </MudText>
+        <PaymentsEditor Methods="Methods" Payments="_payments" Due="Order.Total" RequireFull="!IsCredit"
+                        Submitted="_submitted" Disabled="_saving" PaymentsChanged="StateHasChanged" />
+        <MudTextField @bind-Value="_notes" Label="Observaciones de la venta" MaxLength="1000"
+                      Class="mt-3 tl-filter-plain" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Volver</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="_saving"
+                   StartIcon="@Icons.Material.Outlined.ReceiptLong">
+            @(_saving ? "Facturando…" : "Facturar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public OrderResponse Order { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyCollection<PaymentMethodResponse> Methods { get; set; } = [];
+
+    private readonly List<PaymentRow> _payments = [];
+    private string? _notes;
+    private IApiResultView? _result;
+    private bool _submitted;
+    private bool _saving;
+
+    private bool IsCredit => Order.SaleTypeCode == SaleType.Credit;
+
+    protected override void OnInitialized()
+    {
+        if (!IsCredit && Methods.FirstOrDefault(method => method.AllowsChange) is { } cash)
+        {
+            _payments.Add(new PaymentRow { Method = cash, Amount = Order.Total });
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _submitted = true;
+
+        if (PaymentRules.Error(_payments, Order.Total, !IsCredit) is not null)
+        {
+            return;
+        }
+
+        _saving = true;
+        ApiResult<SaleResponse> result = await SalesApi.InvoiceOrderAsync(Order.Id, new InvoiceOrderRequest
+        {
+            Payments = _payments.Select(payment => payment.ToRequest()).ToList(),
+            Notes = _notes
+        });
+        _saving = false;
+
+        if (result.Succeeded)
+        {
+            Dialog.Close(DialogResult.Ok(result.Data!));
+        }
+        else
+        {
+            _result = result;
+        }
+    }
+}

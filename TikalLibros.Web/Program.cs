@@ -56,6 +56,12 @@ builder.Services.AddScoped<PurchasesApi>();
 builder.Services.AddScoped<ReceptionsApi>();
 builder.Services.AddScoped<InventoryApi>();
 builder.Services.AddScoped<BookLookup>();
+builder.Services.AddScoped<CashApi>();
+builder.Services.AddScoped<OrdersApi>();
+builder.Services.AddScoped<SalesApi>();
+builder.Services.AddScoped<ReportsApi>();
+builder.Services.AddScoped<AuditApi>();
+builder.Services.AddScoped<ParametersApi>();
 
 
 builder.Services.AddScoped<AuthenticationStateProvider, TikalAuthenticationStateProvider>();

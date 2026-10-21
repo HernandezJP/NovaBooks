@@ -24,8 +24,9 @@
         <MudNavMenu Class="tl-nav">
             @foreach (var group in Menu.Groups)
             {
-                @* Catálogo y personas se muestran como lista plana; compras,
-                   inventario y configuración se agrupan en desplegables. *@
+                @* Catálogo y personas se muestran como lista plana; ventas,
+                   compras, inventario, reportes y configuración se agrupan en
+                   desplegables. *@
                 @if (CollapsibleGroups.ContainsKey(group.Key) && !Collapsed)
                 {
                     <MudNavGroup Title="@group.Title" Icon="@CollapsibleGroups[group.Key].Icon"
@@ -62,9 +63,11 @@
     /// <summary>Grupos desplegables con su ícono y las rutas que los abren.</summary>
     private static readonly Dictionary<string, (string Icon, string[] Paths)> CollapsibleGroups = new()
     {
+        ["ventas"] = (Icons.Material.Outlined.PointOfSale, ["/ventas", "/pedidos", "/caja"]),
         ["compras"] = (Icons.Material.Outlined.ShoppingCart, ["/compras", "/recepciones"]),
         ["inventario"] = (Icons.Material.Outlined.Inventory2, ["/inventario"]),
-        ["configuracion"] = (Icons.Material.Outlined.Settings, ["/usuarios", "/roles", "/permisos"])
+        ["reportes"] = (Icons.Material.Outlined.Insights, ["/reportes", "/auditoria"]),
+        ["configuracion"] = (Icons.Material.Outlined.Settings, ["/usuarios", "/roles", "/permisos", "/configuracion"])
     };
 
     /// <summary>Menú contraído a solo íconos (escritorio).</summary>

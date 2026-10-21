@@ -1,0 +1,157 @@
+@page "/caja/aperturas"
+@attribute [RequirePermission(AppPermissions.CashView)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Cash
+@inject CashApi CashApi
+@inject NavigationManager Navigation
+
+<PageTitle>Aperturas y cierres | Tikal Libros</PageTitle>
+
+<PageHeader Title="Aperturas y cierres de caja"
+            Description="Historial de cajas con su monto inicial, el efectivo contado al cerrar y la diferencia del arqueo."
+            Breadcrumbs="_breadcrumbs" />
+
+<Panel Title="Aperturas" Icon="@Icons.Material.Outlined.History">
+    <div class="list-toolbar">
+        <MudSelect T="int?" Value="_registerId" ValueChanged="value => FilterAsync(() => _registerId = value)" Label="Caja"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Clearable="true" Class="list-toolbar__filter">
+            @foreach (CashRegisterResponse register in _registers)
+            {
+                <MudSelectItem T="int?" Value="register.Id">@register.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="bool?" Value="_isOpen" ValueChanged="value => FilterAsync(() => _isOpen = value)" Label="Estado"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Clearable="true" Class="list-toolbar__filter">
+            <MudSelectItem T="bool?" Value="true">Abiertas</MudSelectItem>
+            <MudSelectItem T="bool?" Value="false">Cerradas</MudSelectItem>
+        </MudSelect>
+        <div class="list-toolbar__range">
+            <MudDateRangePicker DateRange="_range" DateRangeChanged="value => FilterAsync(() => _range = value)" Label="Fechas" Clearable="true"
+                                MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+    </div>
+
+    @if (_loading && _page is null)
+    {
+        <LoadingState />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar las aperturas" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is { Items.Count: 0 })
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.History" Title="Sin aperturas" Message="No hay aperturas de caja con esos filtros." />
+    }
+    else if (_page is not null)
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading" Breakpoint="Breakpoint.None"
+                      Class="tl-table tl-table--clickable"
+                      OnRowClick="@((TableRowClickEventArgs<CashSessionListItemResponse> args) => Navigation.NavigateTo($"/caja/aperturas/{args.Item!.Id}"))">
+                <HeaderContent>
+                    <MudTh>Caja</MudTh>
+                    <MudTh>Cajero</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh Class="text-right col-optional">Inicial</MudTh>
+                    <MudTh Class="text-right col-optional">Contado</MudTh>
+                    <MudTh Class="text-right">Diferencia</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.CashRegister</div>
+                        <div class="cell-secondary">
+                            @context.OpenedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            @(context.ClosedAt is { } closed ? $"→ {closed.ToLocalTime():HH:mm}" : "")
+                        </div>
+                    </MudTd>
+                    <MudTd>
+                        <div>@context.Employee</div>
+                        <div class="cell-secondary">@context.EmployeeCode</div>
+                    </MudTd>
+                    <MudTd><DocumentStatus Code="@(context.IsOpen ? "EMITIDA" : "PROCESADA")" Text="@(context.IsOpen ? "Abierta" : "Cerrada")" /></MudTd>
+                    <MudTd Class="number col-optional">@context.InitialAmount.ToString("N2")</MudTd>
+                    <MudTd Class="number col-optional">@(context.CountedCash?.ToString("N2") ?? "—")</MudTd>
+                    <MudTd Class="@($"number {(context.Difference < 0 ? "qty-out" : context.Difference > 0 ? "qty-in" : "")}")">
+                        @(context.Difference?.ToString("N2") ?? "—")
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems" TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+</Panel>
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Ventas", null, disabled: true),
+        new("Aperturas y cierres", null, disabled: true)
+    ];
+
+    private PagedResponse<CashSessionListItemResponse>? _page;
+    private IReadOnlyCollection<CashRegisterResponse> _registers = [];
+    private int? _registerId;
+    private bool? _isOpen;
+    private DateRange? _range;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Task load = LoadAsync();
+        _registers = (await CashApi.GetCatalogsAsync()).Data?.CashRegisters ?? [];
+        await load;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<CashSessionListItemResponse>> result = await CashApi.GetSessionsAsync(new CashSessionQuery
+        {
+            CashRegisterId = _registerId,
+            IsOpen = _isOpen,
+            From = _range?.Start is { } start ? DateOnly.FromDateTime(start) : null,
+            To = _range?.End is { } end ? DateOnly.FromDateTime(end) : null,
+            Page = _pageNumber,
+            PageSize = 15
+        }, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _page = result.Data ?? _page;
+        _error = result.Succeeded ? null : result.Message;
+        _loading = false;
+    }
+
+    private Task FilterAsync(Action change)
+    {
+        change();
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

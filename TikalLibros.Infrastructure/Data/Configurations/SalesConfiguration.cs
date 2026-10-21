@@ -15,6 +15,7 @@ public static class SalesConfiguration
         ConfigureVenta(modelBuilder);
         ConfigureVentaDetalle(modelBuilder);
         ConfigureVentaPago(modelBuilder);
+        ConfigureFacturaVenta(modelBuilder);
         ConfigureEstadoDevolucion(modelBuilder);
         ConfigureMotivoDevolucion(modelBuilder);
         ConfigureDevolucion(modelBuilder);
@@ -510,6 +511,69 @@ public static class SalesConfiguration
                     "[VPA_MontoBase] > 0 AND " +
                     "[VPA_MontoRecibido] >= 0 AND " +
                     "[VPA_CambioEntregado] >= 0");
+            });
+        });
+    }
+
+    private static void ConfigureFacturaVenta(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<PB_FACTURA_VENTA>(builder =>
+        {
+            builder.ToTable("PB_FACTURA_VENTA");
+            builder.HasKey(x => x.FAC_FacturaVenta);
+
+            builder.Property(x => x.FAC_Serie)
+                .HasMaxLength(8)
+                .IsUnicode(false)
+                .IsRequired();
+
+            builder.Property(x => x.FAC_FechaEmision).HasColumnType("datetime2");
+            builder.Property(x => x.FAC_FechaCertificacion).HasColumnType("datetime2");
+            builder.Property(x => x.FAC_FechaAnulacion).HasColumnType("datetime2");
+
+            builder.Property(x => x.FAC_NitEmisor)
+                .HasMaxLength(20)
+                .IsUnicode(false)
+                .IsRequired();
+
+            builder.Property(x => x.FAC_NitReceptor)
+                .HasMaxLength(20)
+                .IsUnicode(false)
+                .IsRequired();
+
+            builder.Property(x => x.FAC_NombreReceptor)
+                .HasMaxLength(250)
+                .IsRequired();
+
+            builder.Property(x => x.FAC_Total).HasPrecision(18, 2);
+            builder.Property(x => x.FAC_Impuesto).HasPrecision(18, 2);
+
+            builder.Property(x => x.FAC_MotivoAnulacion)
+                .HasMaxLength(500);
+
+            builder.Property(x => x.FAC_FechaCreacion)
+                .HasDefaultValueSql("SYSUTCDATETIME()");
+
+            // Una factura por venta; autorización y serie-número no se repiten.
+            builder.HasIndex(x => x.FAC_VentaId).IsUnique();
+            builder.HasIndex(x => x.FAC_NumeroAutorizacion).IsUnique();
+            builder.HasIndex(x => new { x.FAC_Serie, x.FAC_Numero }).IsUnique();
+
+            builder.HasOne(x => x.Venta)
+                .WithOne(x => x.Factura)
+                .HasForeignKey<PB_FACTURA_VENTA>(x => x.FAC_VentaId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.ToTable(table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_PB_FACTURA_VENTA_MONTOS",
+                    "[FAC_Total] >= 0 AND [FAC_Impuesto] >= 0");
+
+                table.HasCheckConstraint(
+                    "CK_PB_FACTURA_VENTA_ANULACION",
+                    "[FAC_Anulada] = 0 OR " +
+                    "([FAC_FechaAnulacion] IS NOT NULL AND [FAC_MotivoAnulacion] IS NOT NULL)");
             });
         });
     }

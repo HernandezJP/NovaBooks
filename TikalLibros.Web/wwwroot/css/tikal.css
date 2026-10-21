@@ -1903,3 +1903,379 @@ body,
         flex: 1 1 100%;
     }
 }
+
+/* ───────────── Sprint 3: pedidos, ventas, caja y reportes ───────────── */
+
+.field-warning {
+    display: block;
+    margin: 2px 0 0 14px;
+    font-size: 0.75rem;
+    color: #8A5A00;
+}
+
+.form-hint {
+    margin: var(--tl-space-2) 0 0;
+    font-size: 0.75rem;
+    color: var(--tl-color-text-muted);
+}
+
+/* Pagos */
+.payments {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-3);
+}
+
+.payments__summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--tl-space-3);
+    margin: 0;
+}
+
+.payments__summary > div {
+    flex: 1 1 120px;
+    padding: var(--tl-space-2) var(--tl-space-3);
+    border: 1px solid var(--tl-color-border);
+    border-radius: var(--tl-radius-md);
+    background: var(--tl-color-surface-warm);
+}
+
+.payments__summary dt {
+    font-size: 0.75rem;
+    color: var(--tl-color-text-muted);
+}
+
+.payments__summary dd {
+    margin: 0;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.payments__pending dd {
+    color: #8A5A00;
+}
+
+.payments__excess dd {
+    color: #B4372B;
+}
+
+.payments__change {
+    background: var(--tl-tint-mint) !important;
+}
+
+.payments__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--tl-space-2);
+}
+
+.payments__method {
+    flex: 1 1 180px;
+}
+
+.payments__amount {
+    flex: 0 1 150px;
+}
+
+.payments__short {
+    flex: 0 1 140px;
+}
+
+.payments__ref {
+    flex: 1 1 180px;
+}
+
+.payments__error {
+    flex: 1 1 100%;
+    margin-top: 0;
+}
+
+.payments__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--tl-space-2);
+}
+
+/* Punto de venta: libros a la izquierda, cobro a la derecha */
+.pos-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
+    gap: var(--tl-space-4);
+    align-items: start;
+}
+
+@media (max-width: 1100px) {
+    .pos-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.pos-total {
+    font-family: var(--tl-font-serif);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--tl-color-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Gráfico de barras horizontal simple (reportes) */
+.bar-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.bar-list__row {
+    display: grid;
+    grid-template-columns: minmax(90px, 160px) minmax(0, 1fr) minmax(90px, auto);
+    align-items: center;
+    gap: var(--tl-space-2);
+    font-size: 0.8125rem;
+}
+
+.bar-list__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bar-list__track {
+    height: 12px;
+    border-radius: 6px;
+    background: var(--tl-color-surface-warm);
+    border: 1px solid var(--tl-color-border);
+    overflow: hidden;
+}
+
+.bar-list__fill {
+    height: 100%;
+    background: var(--tl-color-accent);
+    border-radius: 6px;
+}
+
+.bar-list__value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Gráfico de columnas por día */
+.day-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 160px;
+    padding: var(--tl-space-2) 0;
+    border-bottom: 1px solid var(--tl-color-border);
+    overflow-x: auto;
+}
+
+.day-chart__bar {
+    flex: 1 0 10px;
+    min-width: 10px;
+    background: var(--tl-tint-sky-strong);
+    border-radius: 3px 3px 0 0;
+    min-height: 2px;
+}
+
+.day-chart__bar:hover,
+.day-chart__bar:focus-visible {
+    background: var(--tl-color-accent);
+}
+
+.day-chart__axis {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--tl-color-text-muted);
+}
+
+.reason-list {
+    margin: 0;
+    padding-left: var(--tl-space-4);
+}
+
+.audit-changes td {
+    vertical-align: top;
+    word-break: break-word;
+}
+
+/* Factura electrónica imprimible */
+.invoice {
+    position: relative;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: var(--tl-space-6);
+    background: #FFFFFF;
+    color: #1F2933;
+    border: 1px solid var(--tl-color-border);
+    border-radius: var(--tl-radius-lg);
+    font-size: 0.875rem;
+}
+
+.invoice__demo {
+    margin-bottom: var(--tl-space-4);
+    padding: var(--tl-space-1) var(--tl-space-3);
+    border: 1px dashed #B4372B;
+    border-radius: var(--tl-radius-md);
+    color: #B4372B;
+    font-weight: 700;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.75rem;
+}
+
+.invoice__header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--tl-space-4);
+    padding-bottom: var(--tl-space-4);
+    border-bottom: 2px solid var(--tl-color-primary);
+}
+
+.invoice__brand {
+    font-family: var(--tl-font-serif);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--tl-color-primary);
+}
+
+.invoice__dte {
+    min-width: 230px;
+    padding: var(--tl-space-3);
+    border: 1px solid var(--tl-color-border);
+    border-radius: var(--tl-radius-md);
+}
+
+.invoice__dte-title {
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: var(--tl-space-2);
+}
+
+.invoice dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px var(--tl-space-3);
+    margin: 0;
+}
+
+.invoice dt {
+    color: #52606D;
+}
+
+.invoice dd {
+    margin: 0;
+    font-weight: 600;
+}
+
+.invoice__receiver {
+    padding: var(--tl-space-4) 0;
+    border-bottom: 1px solid var(--tl-color-border);
+}
+
+.invoice__lines {
+    width: 100%;
+    margin: var(--tl-space-4) 0;
+    border-collapse: collapse;
+}
+
+.invoice__lines th,
+.invoice__lines td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--tl-color-border);
+    vertical-align: top;
+    font-variant-numeric: tabular-nums;
+}
+
+.invoice__lines th {
+    background: var(--tl-color-surface-warm);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.invoice__totals {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: var(--tl-space-4);
+}
+
+.invoice__words {
+    flex: 1 1 280px;
+    margin: 0;
+    font-style: italic;
+}
+
+.invoice__totals dl {
+    min-width: 240px;
+}
+
+.invoice__totals dd {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.invoice__grand {
+    font-size: 1.05rem;
+    font-weight: 800 !important;
+    color: #1F2933 !important;
+}
+
+.invoice__footer {
+    margin-top: var(--tl-space-6);
+    padding-top: var(--tl-space-3);
+    border-top: 1px solid var(--tl-color-border);
+    font-size: 0.75rem;
+    color: #52606D;
+    word-break: break-all;
+}
+
+.invoice__annulled-note {
+    margin-top: var(--tl-space-2);
+    color: #B4372B;
+    font-weight: 700;
+}
+
+.invoice--annulled::after {
+    content: "ANULADA";
+    position: absolute;
+    inset: 40% 0 auto 0;
+    text-align: center;
+    font-size: 5rem;
+    font-weight: 900;
+    color: rgba(180, 55, 43, 0.15);
+    transform: rotate(-18deg);
+    pointer-events: none;
+}
+
+@media print {
+    .no-print,
+    .mud-appbar,
+    .mud-drawer,
+    .mud-snackbar-provider {
+        display: none !important;
+    }
+
+    body,
+    .mud-main-content,
+    .mud-layout {
+        background: #FFFFFF !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    .invoice {
+        border: none;
+        padding: 0;
+        max-width: none;
+    }
+}

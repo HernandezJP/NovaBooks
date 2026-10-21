@@ -3857,6 +3857,97 @@ namespace TikalLibros.Infrastructure.Data.Migrations
                     b.ToTable("PB_ESTADO_VENTA", (string)null);
                 });
 
+            modelBuilder.Entity("TikalLibros.Domain.Entities.Sales.PB_FACTURA_VENTA", b =>
+                {
+                    b.Property<int>("FAC_FacturaVenta")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("FAC_FacturaVenta"));
+
+                    b.Property<bool>("FAC_Anulada")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("FAC_EsDemostracion")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("FAC_FechaAnulacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("FAC_FechaCertificacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("FAC_FechaCreacion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTime>("FAC_FechaEmision")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("FAC_Impuesto")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("FAC_MotivoAnulacion")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("FAC_NitEmisor")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("FAC_NitReceptor")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("FAC_NombreReceptor")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<long>("FAC_Numero")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("FAC_NumeroAutorizacion")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FAC_Serie")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(8)");
+
+                    b.Property<decimal>("FAC_Total")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("FAC_VentaId")
+                        .HasColumnType("int");
+
+                    b.HasKey("FAC_FacturaVenta");
+
+                    b.HasIndex("FAC_NumeroAutorizacion")
+                        .IsUnique();
+
+                    b.HasIndex("FAC_VentaId")
+                        .IsUnique();
+
+                    b.HasIndex("FAC_Serie", "FAC_Numero")
+                        .IsUnique();
+
+                    b.ToTable("PB_FACTURA_VENTA", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PB_FACTURA_VENTA_ANULACION", "[FAC_Anulada] = 0 OR ([FAC_FechaAnulacion] IS NOT NULL AND [FAC_MotivoAnulacion] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_PB_FACTURA_VENTA_MONTOS", "[FAC_Total] >= 0 AND [FAC_Impuesto] >= 0");
+                        });
+                });
+
             modelBuilder.Entity("TikalLibros.Domain.Entities.Sales.PB_MOTIVO_DEVOLUCION", b =>
                 {
                     b.Property<int>("MDV_MotivoDevolucion")
@@ -5617,6 +5708,17 @@ namespace TikalLibros.Infrastructure.Data.Migrations
                     b.Navigation("VentaDetalle");
                 });
 
+            modelBuilder.Entity("TikalLibros.Domain.Entities.Sales.PB_FACTURA_VENTA", b =>
+                {
+                    b.HasOne("TikalLibros.Domain.Entities.Sales.PB_VENTA", "Venta")
+                        .WithOne("Factura")
+                        .HasForeignKey("TikalLibros.Domain.Entities.Sales.PB_FACTURA_VENTA", "FAC_VentaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Venta");
+                });
+
             modelBuilder.Entity("TikalLibros.Domain.Entities.Sales.PB_PEDIDO_CLIENTE", b =>
                 {
                     b.HasOne("TikalLibros.Domain.Entities.Inventory.PB_ALMACEN", "Almacen")
@@ -6147,6 +6249,8 @@ namespace TikalLibros.Infrastructure.Data.Migrations
                     b.Navigation("Detalles");
 
                     b.Navigation("Devoluciones");
+
+                    b.Navigation("Factura");
 
                     b.Navigation("Pagos");
                 });

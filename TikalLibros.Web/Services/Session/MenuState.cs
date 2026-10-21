@@ -61,6 +61,18 @@ public sealed class MenuState : IDisposable
             "alerts" => Icons.Material.Outlined.NotificationImportant,
             "movements" => Icons.Material.Outlined.SwapVert,
             "adjustments" => Icons.Material.Outlined.Tune,
+            "pos" => Icons.Material.Outlined.PointOfSale,
+            "orders" => Icons.Material.Outlined.Assignment,
+            "approvals" => Icons.Material.Outlined.FactCheck,
+            "sales" => Icons.Material.Outlined.ReceiptLong,
+            "cash" => Icons.Material.Outlined.Payments,
+            "cash-history" => Icons.Material.Outlined.History,
+            "report-sales" => Icons.Material.Outlined.BarChart,
+            "report-books" => Icons.Material.Outlined.Leaderboard,
+            "report-inventory" => Icons.Material.Outlined.Warehouse,
+            "report-orders" => Icons.Material.Outlined.PendingActions,
+            "audit" => Icons.Material.Outlined.ManageSearch,
+            "parameters" => Icons.Material.Outlined.SettingsSuggest,
 
             _ => Icons.Material.Outlined.Circle
         };

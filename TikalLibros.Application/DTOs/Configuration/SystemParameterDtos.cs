@@ -8,7 +8,7 @@ public sealed class SystemParameterResponse
 
     public string Value { get; set; } = string.Empty;
 
-    /// <summary>DECIMAL o INTEGER.</summary>
+    /// <summary>DECIMAL, INTEGER o STRING.</summary>
     public string DataType { get; set; } = string.Empty;
 
     public string? Description { get; set; }
@@ -21,7 +21,7 @@ public sealed class SystemParameterResponse
 public sealed class UpdateSystemParameterRequest
 {
     [Required(ErrorMessage = "Indique el valor.")]
-    [StringLength(10, ErrorMessage = "El valor no puede superar los 10 caracteres.")]
-    [RegularExpression(@"^\d+(\.\d{1,2})?$", ErrorMessage = "El valor solo admite números con hasta 2 decimales.")]
+    [StringLength(20, ErrorMessage = "El valor no puede superar los 20 caracteres.")]
+    [RegularExpression(@"^[0-9A-Za-z.\-]+$", ErrorMessage = "El valor solo admite números, letras sin tildes, punto y guion.")]
     public string Value { get; set; } = string.Empty;
 }

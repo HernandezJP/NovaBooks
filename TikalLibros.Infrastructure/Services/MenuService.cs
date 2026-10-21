@@ -12,6 +12,20 @@ public sealed class MenuService : IMenuService
         Group("inicio", "Inicio",
             Item("inicio", "Inicio", "/", "home", null)),
 
+        Group("ventas", "Ventas",
+            Item("punto-venta", "Punto de venta", "/ventas/nueva", "pos",
+                SalesPermissions.Create),
+            Item("pedidos", "Pedidos", "/pedidos", "orders",
+                OrderPermissions.View),
+            Item("aprobaciones", "Aprobaciones", "/pedidos/aprobaciones", "approvals",
+                OrderPermissions.Approve),
+            Item("ventas", "Ventas", "/ventas", "sales",
+                SalesPermissions.View),
+            Item("caja", "Mi caja", "/caja", "cash",
+                CashPermissions.Open),
+            Item("cierres", "Aperturas y cierres", "/caja/aperturas", "cash-history",
+                CashPermissions.View)),
+
         Group("catalogo", "Catálogo",
             Item("libros", "Libros", "/productos", "books",
                 CatalogPermissions.View),
@@ -44,6 +58,17 @@ public sealed class MenuService : IMenuService
             Item("ajustes", "Ajustes", "/inventario/ajustes", "adjustments",
                 InventoryPermissions.Adjust)),
 
+        Group("reportes", "Reportes",
+            Item("reporte-ventas", "Ventas por período", "/reportes/ventas", "report-sales",
+                ReportPermissions.Sales),
+            Item("reporte-libros", "Libros más vendidos", "/reportes/libros-mas-vendidos", "report-books",
+                ReportPermissions.Sales),
+            Item("reporte-inventario", "Inventario valorizado", "/reportes/inventario", "report-inventory",
+                ReportPermissions.Inventory),
+            Item("reporte-pedidos", "Pedidos pendientes", "/reportes/pedidos-pendientes", "report-orders",
+                ReportPermissions.Sales),
+            Item("auditoria", "Auditoría", "/auditoria", "audit",
+                ReportPermissions.Audit)),
 
         Group("configuracion", "Configuración",
             Item("usuarios", "Usuarios", "/usuarios", "users",
@@ -51,7 +76,9 @@ public sealed class MenuService : IMenuService
             Item("roles", "Roles", "/roles", "roles",
                 RolePermissions.View),
             Item("permisos", "Permisos", "/permisos", "permissions",
-                RolePermissions.AssignPermissions))
+                RolePermissions.AssignPermissions),
+            Item("parametros", "Parámetros", "/configuracion/parametros", "parameters",
+                ConfigurationPermissions.ManageParameters))
     ];
 
     public IReadOnlyCollection<MenuGroupResponse> GetMenu(

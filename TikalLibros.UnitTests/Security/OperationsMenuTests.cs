@@ -41,7 +41,7 @@ public sealed class OperationsMenuTests
     {
         string[] groups = _service.GetMenu(SystemPermissions.GetAll()).Select(group => group.Key).ToArray();
 
-        Assert.Equal(["inicio", "catalogo", "personas", "compras", "inventario", "configuracion"], groups);
+        Assert.Equal(["inicio", "ventas", "catalogo", "personas", "compras", "inventario", "reportes", "configuracion"], groups);
     }
 
     [Fact]

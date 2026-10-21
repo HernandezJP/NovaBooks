@@ -279,6 +279,9 @@ public sealed class SaleResponse
 
     public IReadOnlyCollection<SalePaymentResponse> Payments { get; set; } = [];
 
+    /// <summary>Factura emitida con la venta (null en ventas anteriores a la facturación).</summary>
+    public InvoiceSummaryResponse? Invoice { get; set; }
+
     public bool CanPay { get; set; }
 
     public bool CanAnnul { get; set; }
@@ -338,4 +341,93 @@ public sealed class PaymentMethodResponse
     public bool RequiresAuthorization { get; set; }
 
     public bool AllowsChange { get; set; }
+}
+
+/// <summary>Datos de certificación de la factura de una venta.</summary>
+public sealed class InvoiceSummaryResponse
+{
+    public string Series { get; set; } = string.Empty;
+
+    public long Number { get; set; }
+
+    /// <summary>Número de autorización (UUID).</summary>
+    public string Authorization { get; set; } = string.Empty;
+
+    public DateTime IssuedAt { get; set; }
+
+    public bool IsDemo { get; set; }
+
+    public bool Annulled { get; set; }
+}
+
+public sealed class InvoiceLineResponse
+{
+    public decimal Quantity { get; set; }
+
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>Precio unitario con IVA.</summary>
+    public decimal UnitPrice { get; set; }
+
+    public decimal Discount { get; set; }
+
+    public decimal Total { get; set; }
+}
+
+/// <summary>Factura completa para mostrarla o imprimirla.</summary>
+public sealed class InvoiceResponse
+{
+    public int SaleId { get; set; }
+
+    public string SaleNumber { get; set; } = string.Empty;
+
+    public string IssuerName { get; set; } = string.Empty;
+
+    public string IssuerTradeName { get; set; } = string.Empty;
+
+    public string IssuerNit { get; set; } = string.Empty;
+
+    public string IssuerAddress { get; set; } = string.Empty;
+
+    public string Series { get; set; } = string.Empty;
+
+    public long Number { get; set; }
+
+    public string Authorization { get; set; } = string.Empty;
+
+    public DateTime IssuedAt { get; set; }
+
+    public DateTime CertifiedAt { get; set; }
+
+    /// <summary>Certificación simulada: sin validez fiscal.</summary>
+    public bool IsDemo { get; set; }
+
+    public string ReceiverNit { get; set; } = string.Empty;
+
+    public string ReceiverName { get; set; } = string.Empty;
+
+    public string SaleType { get; set; } = string.Empty;
+
+    public DateOnly? CreditDueDate { get; set; }
+
+    public string Seller { get; set; } = string.Empty;
+
+    public IReadOnlyCollection<InvoiceLineResponse> Lines { get; set; } = [];
+
+    public decimal Subtotal { get; set; }
+
+    public decimal Discount { get; set; }
+
+    /// <summary>IVA incluido en el total.</summary>
+    public decimal Tax { get; set; }
+
+    public decimal Total { get; set; }
+
+    public string TotalInWords { get; set; } = string.Empty;
+
+    public bool Annulled { get; set; }
+
+    public DateTime? AnnulledAt { get; set; }
+
+    public string? AnnulmentReason { get; set; }
 }

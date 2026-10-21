@@ -39,6 +39,11 @@ public interface ISaleService
         int authenticatedUserId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Factura de la venta para mostrarla o imprimirla.</summary>
+    Task<InvoiceResponse?> GetInvoiceAsync(
+        int saleId,
+        CancellationToken cancellationToken = default);
+
     Task<OperationResult<SaleResponse>> AnnulAsync(
         int saleId,
         AnnulSaleRequest request,

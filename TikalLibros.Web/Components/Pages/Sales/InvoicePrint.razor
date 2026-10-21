@@ -1,0 +1,145 @@
+@page "/ventas/{Id:int}/factura"
+@attribute [RequirePermission(AppPermissions.SalesView)]
+@using TikalLibros.Application.DTOs.Sales
+@inject SalesApi SalesApi
+@inject IJSRuntime JS
+
+<PageTitle>@(_invoice is null ? "Factura" : $"Factura {_invoice.Series}-{_invoice.Number}") | Tikal Libros</PageTitle>
+
+<div class="no-print">
+    <PageHeader Title="Factura electrónica" Description="@_invoice?.ReceiverName" Breadcrumbs="_breadcrumbs">
+        <Actions>
+            <MudButton Href="@($"/ventas/{Id}")" Variant="Variant.Text">Volver a la venta</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Print"
+                       Disabled="_invoice is null" OnClick="PrintAsync">
+                Imprimir o guardar PDF
+            </MudButton>
+        </Actions>
+    </PageHeader>
+</div>
+
+@if (_error is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar la factura" Message="@_error" OnRetry="LoadAsync" /></div>
+}
+else if (_invoice is null)
+{
+    <div class="panel"><LoadingState Rows="8" /></div>
+}
+else
+{
+    <article class="invoice @(_invoice.Annulled ? "invoice--annulled" : "")" aria-label="Factura">
+        @if (_invoice.IsDemo)
+        {
+            <div class="invoice__demo">Documento de demostración · Sin validez fiscal</div>
+        }
+
+        <header class="invoice__header">
+            <div class="invoice__issuer">
+                <div class="invoice__brand">@_invoice.IssuerTradeName</div>
+                <div>@_invoice.IssuerName</div>
+                <div>NIT @_invoice.IssuerNit</div>
+                <div>@_invoice.IssuerAddress</div>
+            </div>
+            <div class="invoice__dte">
+                <div class="invoice__dte-title">Factura electrónica</div>
+                <dl>
+                    <dt>Serie</dt><dd>@_invoice.Series</dd>
+                    <dt>Número</dt><dd>@_invoice.Number</dd>
+                    <dt>Emisión</dt><dd>@_invoice.IssuedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+                </dl>
+            </div>
+        </header>
+
+        <section class="invoice__receiver">
+            <dl>
+                <dt>NIT</dt><dd>@_invoice.ReceiverNit</dd>
+                <dt>Nombre</dt><dd>@_invoice.ReceiverName</dd>
+                <dt>Condición</dt>
+                <dd>@_invoice.SaleType @(_invoice.CreditDueDate is { } due ? $"· vence el {due:dd/MM/yyyy}" : "")</dd>
+                <dt>Venta</dt><dd>@_invoice.SaleNumber · atendió @_invoice.Seller</dd>
+            </dl>
+        </section>
+
+        <table class="invoice__lines">
+            <thead>
+                <tr>
+                    <th class="text-right">Cant.</th>
+                    <th>Descripción</th>
+                    <th class="text-right">Precio unit.</th>
+                    <th class="text-right">Descuento</th>
+                    <th class="text-right">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (InvoiceLineResponse line in _invoice.Lines)
+                {
+                    <tr>
+                        <td class="text-right">@line.Quantity.ToString("N0")</td>
+                        <td>@line.Description</td>
+                        <td class="text-right">@line.UnitPrice.ToString("N2")</td>
+                        <td class="text-right">@(line.Discount > 0 ? line.Discount.ToString("N2") : "—")</td>
+                        <td class="text-right">@line.Total.ToString("N2")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="invoice__totals">
+            <p class="invoice__words">@_invoice.TotalInWords</p>
+            <dl>
+                <dt>Subtotal</dt><dd>Q @_invoice.Subtotal.ToString("N2")</dd>
+                <dt>Descuento</dt><dd>− Q @_invoice.Discount.ToString("N2")</dd>
+                <dt>IVA incluido</dt><dd>Q @_invoice.Tax.ToString("N2")</dd>
+                <dt class="invoice__grand">Total</dt><dd class="invoice__grand">Q @_invoice.Total.ToString("N2")</dd>
+            </dl>
+        </div>
+
+        <footer class="invoice__footer">
+            <div>Número de autorización: <strong>@_invoice.Authorization</strong></div>
+            <div>Fecha de certificación: @_invoice.CertifiedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</div>
+            @if (_invoice.IsDemo)
+            {
+                <div>Certificación simulada por Tikal Libros para fines de demostración; no fue enviada a la SAT.</div>
+            }
+            @if (_invoice.Annulled)
+            {
+                <div class="invoice__annulled-note">
+                    Anulada el @_invoice.AnnulledAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm"): @_invoice.AnnulmentReason
+                </div>
+            }
+        </footer>
+    </article>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private List<BreadcrumbItem> _breadcrumbs = [];
+    private InvoiceResponse? _invoice;
+    private string? _error;
+
+    protected override Task OnParametersSetAsync()
+    {
+        _breadcrumbs =
+        [
+            new("Inicio", "/"),
+            new("Ventas", "/ventas"),
+            new("Venta", $"/ventas/{Id}"),
+            new("Factura", null, disabled: true)
+        ];
+
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        ApiResult<InvoiceResponse> result = await SalesApi.GetInvoiceAsync(Id);
+        _invoice = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+}

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using TikalLibros.Infrastructure.Data.Identity;
 using TikalLibros.Infrastructure.Data.Options;
 using TikalLibros.Infrastructure.Data.Seed;
+using TikalLibros.Infrastructure.Services.Sales;
 
 namespace TikalLibros.Infrastructure.Data;
 
@@ -26,6 +27,8 @@ public sealed class DatabaseInitializer
 
     private readonly ILogger<DatabaseInitializer> _logger;
     private readonly DemoOperationsSeeder _demoOperations;
+    private readonly DemoSalesSeeder _demoSales;
+    private readonly InvoiceService _invoices;
 
     public DatabaseInitializer(
         AppDbContext context,
@@ -35,9 +38,13 @@ public sealed class DatabaseInitializer
         IHostEnvironment environment,
         IOptions<DatabaseOptions> options,
         ILogger<DatabaseInitializer> logger,
-        DemoOperationsSeeder demoOperations)
+        DemoOperationsSeeder demoOperations,
+        DemoSalesSeeder demoSales,
+        InvoiceService invoices)
     {
         _demoOperations = demoOperations;
+        _demoSales = demoSales;
+        _invoices = invoices;
 
         _context = context;
         _userManager = userManager;
@@ -190,6 +197,19 @@ public sealed class DatabaseInitializer
                 "Cargando datos de demostración de compras e inventario.");
 
             await _demoOperations.SeedAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "Cargando datos de demostración de pedidos, ventas y caja.");
+
+            await _demoSales.SeedAsync(cancellationToken);
+        }
+
+        // Ventas registradas antes de la facturación electrónica.
+        int invoices = await _invoices.IssueMissingAsync(cancellationToken);
+
+        if (invoices > 0)
+        {
+            _logger.LogInformation("Se emitieron {Count} factura(s) de ventas anteriores.", invoices);
         }
 
 

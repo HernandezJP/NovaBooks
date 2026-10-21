@@ -81,6 +81,20 @@
     }
 
     window.tikalLibros = {
+        // Descarga un texto (CSV de los reportes) como archivo. El BOM hace
+        // que Excel abra bien las tildes.
+        downloadText: function (fileName, content, mimeType) {
+            var blob = new Blob([String.fromCharCode(0xFEFF) + content], { type: mimeType || "text/csv;charset=utf-8" });
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement("a");
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        },
+
         // Lleva la vista al primer campo con error y le da el foco.
         scrollToFirstError: function () {
             requestAnimationFrame(function () {

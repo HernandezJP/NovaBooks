@@ -90,5 +90,7 @@ namespace TikalLibros.Domain.Entities.Sales
         public ICollection<PB_VENTA_PAGO> Pagos { get; set; } = [];
 
         public ICollection<PB_DEVOLUCION_VENTA> Devoluciones { get; set; } = [];
+
+        public PB_FACTURA_VENTA? Factura { get; set; }
     }
 }

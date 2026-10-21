@@ -6,6 +6,8 @@
 @inject AuthorsApi AuthorsApi
 @inject PurchasesApi PurchasesApi
 @inject InventoryApi InventoryApi
+@inject SalesApi SalesApi
+@inject OrdersApi OrdersApi
 
 <PageTitle>Inicio | Tikal Libros</PageTitle>
 
@@ -85,6 +87,21 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (Session.HasPermission(AppPermissions.SalesView))
+        {
+            DateOnly today = DateOnly.FromDateTime(DateTime.Today);
+            _stats.Add(new Stat("mint", Icons.Material.Outlined.ReceiptLong, "Ventas pagadas hoy", "/ventas",
+                async () => await SalesApi.GetPagedAsync(new() { From = today, To = today, Status = "PAGADA", PageSize = 1 }) is { Succeeded: true } r
+                    ? r.Data!.TotalItems : null));
+        }
+
+        if (Session.HasPermission(AppPermissions.OrdersApprove))
+        {
+            _stats.Add(new Stat("peach", Icons.Material.Outlined.FactCheck, "Pedidos por aprobar", "/pedidos/aprobaciones",
+                async () => await OrdersApi.GetPagedAsync(new() { Status = "POR_APROBAR", PageSize = 1 }) is { Succeeded: true } r
+                    ? r.Data!.TotalItems : null));
+        }
+
         if (Session.HasPermission(AppPermissions.CatalogView))
         {
             _stats.Add(new Stat("peach", Icons.Material.Outlined.MenuBook, "Libros activos", "/productos",
@@ -126,6 +143,12 @@
                     ? r.Data!.TotalItems : null));
         }
 
+        AddShortcut(AppPermissions.SalesCreate, Icons.Material.Outlined.PointOfSale, "Punto de venta",
+            "Venta de mostrador: cobre y el inventario se descuenta solo.", "/ventas/nueva");
+        AddShortcut(AppPermissions.OrdersCreate, Icons.Material.Outlined.NoteAdd, "Nuevo pedido",
+            "Reserve libros para un cliente; con descuento alto pasa a aprobación.", "/pedidos/nuevo");
+        AddShortcut(AppPermissions.CashOpen, Icons.Material.Outlined.Payments, "Mi caja",
+            "Abra su caja al iniciar el turno y ciérrela con el arqueo.", "/caja");
         AddShortcut(AppPermissions.CatalogCreate, Icons.Material.Outlined.LibraryAdd, "Registrar libro",
             "Agregue un título al catálogo con su ISBN y precio.", "/productos/nuevo");
         AddShortcut(AppPermissions.CustomersCreate, Icons.Material.Outlined.PersonAdd, "Registrar cliente",

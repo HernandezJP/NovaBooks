@@ -1,0 +1,72 @@
+@* Abono a una venta con saldo pendiente. *@
+@using TikalLibros.Application.DTOs.Sales
+@inject SalesApi SalesApi
+
+<MudDialog>
+    <DialogContent>
+        <FormErrors Result="_result" />
+        <MudText Typo="Typo.body2" Class="mb-3">
+            @Sale.Customer · saldo pendiente <strong>Q @Sale.Balance.ToString("N2")</strong>
+            @(Sale.CreditDueDate is { } due ? $"· vence el {due:dd/MM/yyyy}" : "")
+        </MudText>
+        <PaymentsEditor Methods="Methods" Payments="_payments" Due="Sale.Balance" RequireFull="false"
+                        Submitted="_submitted" Disabled="_saving" PaymentsChanged="StateHasChanged" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Volver</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="@(_saving || _payments.Count == 0)"
+                   StartIcon="@Icons.Material.Outlined.Payments">
+            @(_saving ? "Registrando…" : "Registrar abono")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public SaleResponse Sale { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyCollection<PaymentMethodResponse> Methods { get; set; } = [];
+
+    private readonly List<PaymentRow> _payments = [];
+    private IApiResultView? _result;
+    private bool _submitted;
+    private bool _saving;
+
+    protected override void OnInitialized()
+    {
+        if (Methods.FirstOrDefault(method => method.AllowsChange) is { } cash)
+        {
+            _payments.Add(new PaymentRow { Method = cash, Amount = Sale.Balance });
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _submitted = true;
+
+        if (_payments.Count == 0 || PaymentRules.Error(_payments, Sale.Balance, requireFull: false) is not null)
+        {
+            return;
+        }
+
+        _saving = true;
+        ApiResult<SaleResponse> result = await SalesApi.AddPaymentsAsync(Sale.Id, new AddPaymentsRequest
+        {
+            Payments = _payments.Select(payment => payment.ToRequest()).ToList()
+        });
+        _saving = false;
+
+        if (result.Succeeded)
+        {
+            Dialog.Close(DialogResult.Ok(result.Data!));
+        }
+        else
+        {
+            _result = result;
+        }
+    }
+}
