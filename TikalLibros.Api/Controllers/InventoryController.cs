@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Inventory;
@@ -11,6 +12,7 @@ namespace TikalLibros.Api.Controllers;
 /// Existencias, niveles mínimo/máximo, alertas, movimientos (kardex) y
 /// ajustes. Los costos solo se envían con Inventario.VerCostos.
 /// </summary>
+[AuditEntity("Inventario")]
 [ApiController]
 [Route("api/inventario")]
 public sealed class InventoryController : ControllerBase
@@ -44,6 +46,7 @@ public sealed class InventoryController : ControllerBase
 
     [HasPermission(InventoryPermissions.Adjust)]
     [HttpPut("existencias/niveles")]
+    [AuditEntity("Existencia", "MODIFICAR_NIVELES")]
     [ProducesResponseType(typeof(StockItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
@@ -138,6 +141,7 @@ public sealed class InventoryController : ControllerBase
 
     [HasPermission(InventoryPermissions.Adjust)]
     [HttpPost("ajustes")]
+    [AuditEntity("AjusteInventario", "CREAR")]
     [ProducesResponseType(typeof(AdjustmentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]

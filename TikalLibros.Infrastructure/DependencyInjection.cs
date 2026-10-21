@@ -13,6 +13,8 @@ using TikalLibros.Infrastructure.Services.People;
 using TikalLibros.Infrastructure.Services.Documents;
 using TikalLibros.Infrastructure.Services.Purchasing;
 using TikalLibros.Infrastructure.Services.Inventory;
+using TikalLibros.Infrastructure.Services.Audit;
+using TikalLibros.Infrastructure.Services.Configuration;
 using TikalLibros.Infrastructure.Data.Seed;
 
 
@@ -129,6 +131,12 @@ public static class DependencyInjection
         services.AddScoped<DocumentNumberService>();
 
         services.AddScoped<CurrentEmployeeResolver>();
+
+        services.AddHttpContextAccessor();
+
+        services.AddScoped<AuditTrail>();
+
+        services.AddScoped<ISystemParameterService, SystemParameterService>();
 
         services.AddScoped<PurchaseOrderService>();
 

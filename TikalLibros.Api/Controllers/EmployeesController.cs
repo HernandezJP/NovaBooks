@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Employees;
@@ -11,6 +12,7 @@ namespace TikalLibros.Api.Controllers;
 /// Empleados de la librería. El usuario de cada empleado se crea o vincula
 /// desde /api/usuarios (EmployeeId).
 /// </summary>
+[AuditEntity("Empleado")]
 [ApiController]
 [Route("api/empleados")]
 public sealed class EmployeesController : ControllerBase

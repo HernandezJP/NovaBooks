@@ -1,10 +1,12 @@
 using Microsoft.OpenApi;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.ErrorHandling;
 using TikalLibros.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+// Toda operación que modifica datos queda en la auditoría.
+builder.Services.AddControllers(options => options.Filters.Add<AuditActionFilter>());
 
 builder.Services.AddProblemDetails();
 

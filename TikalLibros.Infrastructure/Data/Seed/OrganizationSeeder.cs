@@ -1,10 +1,14 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using TikalLibros.Application.Common;
+using TikalLibros.Application.DTOs.Sales;
 using TikalLibros.Domain.Entities.Administration;
+using TikalLibros.Domain.Entities.Cash;
 using TikalLibros.Domain.Entities.Configuration;
 using TikalLibros.Domain.Entities.Inventory;
 using TikalLibros.Domain.Entities.People;
+using TikalLibros.Domain.Entities.Sales;
 using TikalLibros.Infrastructure.Data.Identity;
 
 namespace TikalLibros.Infrastructure.Data.Seed;
@@ -20,6 +24,13 @@ public static class OrganizationSeeder
     public const string MainBranchCode = "SUC-01";
     public const string MainWarehouseCode = "ALM-01";
     public const string AdministratorPosition = "Administrador del sistema";
+    public const string MainCashRegisterCode = "CAJA-01";
+
+    private static readonly (string Code, string Name, string Description)[] OrderApprovalStates =
+    [
+        (OrderStatus.PendingApproval, "Por aprobar", "Tiene un descuento mayor al permitido o excede el crédito del cliente."),
+        (OrderStatus.Rejected, "Rechazado", "Un supervisor no aprobó el pedido; la mercadería no se reservó.")
+    ];
 
     private static readonly string[] Positions =
     [
@@ -134,6 +145,72 @@ public static class OrganizationSeeder
 
             await context.SaveChangesAsync(cancellationToken);
         }
+
+        await SeedSalesSetupAsync(context, company.EMP_Empresa, branch.SUC_Sucursal, cancellationToken);
+    }
+
+    /// <summary>
+    /// Lo que pedidos, ventas y caja necesitan además de los catálogos:
+    /// los estados de aprobación del pedido, los parámetros de descuento y
+    /// reserva, y la caja principal. Agrega solo lo que falte.
+    /// </summary>
+    private static async Task SeedSalesSetupAsync(
+        AppDbContext context,
+        int companyId,
+        int branchId,
+        CancellationToken cancellationToken)
+    {
+        HashSet<string> orderStates =
+            (await context.EstadosPedido
+                .Select(state => state.EPE_Codigo)
+                .ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((string code, string name, string description) in OrderApprovalStates.Where(state => !orderStates.Contains(state.Code)))
+        {
+            context.EstadosPedido.Add(new PB_ESTADO_PEDIDO
+            {
+                EPE_Codigo = code,
+                EPE_Nombre = name,
+                EPE_Descripcion = description,
+                EPE_Activo = true
+            });
+        }
+
+        HashSet<string> parameters =
+            (await context.ParametrosSistema
+                .Where(parameter => parameter.PAR_EmpresaId == companyId)
+                .Select(parameter => parameter.PAR_Clave)
+                .ToListAsync(cancellationToken))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (SystemParameterDefinition definition in SystemParameterKeys.Defaults.Where(item => !parameters.Contains(item.Key)))
+        {
+            context.ParametrosSistema.Add(new PB_PARAMETRO_SISTEMA
+            {
+                PAR_EmpresaId = companyId,
+                PAR_Clave = definition.Key,
+                PAR_Valor = definition.DefaultValue,
+                PAR_TipoDato = definition.DataType,
+                PAR_Descripcion = definition.Description,
+                PAR_EsEditable = true,
+                PAR_Activo = true
+            });
+        }
+
+        if (!await context.Cajas.AnyAsync(item => item.CAJ_Codigo == MainCashRegisterCode, cancellationToken))
+        {
+            context.Cajas.Add(new PB_CAJA
+            {
+                CAJ_SucursalId = branchId,
+                CAJ_Codigo = MainCashRegisterCode,
+                CAJ_Nombre = "Caja principal",
+                CAJ_Descripcion = "Caja de la sucursal central.",
+                CAJ_Activo = true
+            });
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

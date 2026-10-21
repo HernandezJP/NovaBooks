@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Purchasing;
@@ -11,6 +12,7 @@ namespace TikalLibros.Api.Controllers;
 /// Órdenes de compra: borrador → emitida → recibida (parcial o total) o
 /// cancelada. La recepción se registra en /api/recepciones.
 /// </summary>
+[AuditEntity("OrdenCompra")]
 [ApiController]
 [Route("api/compras")]
 public sealed class PurchaseOrdersController : ControllerBase

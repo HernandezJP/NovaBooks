@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Authors;
@@ -10,6 +11,7 @@ namespace TikalLibros.Api.Controllers;
 /// <summary>
 /// Autores del catálogo. Usa los permisos de Catálogo.
 /// </summary>
+[AuditEntity("Autor")]
 [ApiController]
 [Route("api/autores")]
 public sealed class AuthorsController : ControllerBase

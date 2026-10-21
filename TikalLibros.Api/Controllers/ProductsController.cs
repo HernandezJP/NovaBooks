@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Products;
@@ -8,6 +9,7 @@ using TikalLibros.Infrastructure.Security.Permissions;
 
 namespace TikalLibros.Api.Controllers;
 
+[AuditEntity("Libro")]
 [ApiController]
 [Route("api/productos")]
 public sealed class ProductsController : ControllerBase

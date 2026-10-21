@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Roles;
@@ -7,6 +8,7 @@ using TikalLibros.Infrastructure.Security.Permissions;
 
 namespace TikalLibros.Api.Controllers;
 
+[AuditEntity("Rol")]
 [ApiController]
 [Route("api/roles")]
 public sealed class RolesController : ControllerBase

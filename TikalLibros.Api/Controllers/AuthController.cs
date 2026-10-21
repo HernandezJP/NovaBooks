@@ -1,21 +1,27 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Application.Authentication;
+using TikalLibros.Infrastructure.Services.Audit;
 using TikalLibros.Infrastructure.Security.Permissions;
 
 namespace TikalLibros.Api.Controllers;
 
+[SkipAudit]
 [ApiController]
 [Route("api/auth")]
 public sealed class AuthController : ControllerBase
 {
     private readonly IAuthenticationService _authenticationService;
+    private readonly AuditTrail _audit;
 
     public AuthController(
-        IAuthenticationService authenticationService)
+        IAuthenticationService authenticationService,
+        AuditTrail audit)
     {
         _authenticationService = authenticationService;
+        _audit = audit;
     }
 
     [AllowAnonymous]
@@ -40,6 +46,21 @@ public sealed class AuthController : ControllerBase
             await _authenticationService.LoginAsync(
                 request,
                 cancellationToken);
+
+        // Historial de accesos: solo el usuario escrito y el resultado,
+        // nunca la contraseña.
+        await _audit.RecordLoginAsync(
+            int.TryParse(result.Response?.User.Id, out int userId) ? userId : null,
+            request.UserNameOrEmail,
+            result.Status == LoginStatus.Succeeded,
+            result.Status switch
+            {
+                LoginStatus.Succeeded => null,
+                LoginStatus.LockedOut => "Cuenta bloqueada por intentos fallidos.",
+                LoginStatus.Disabled => "Cuenta desactivada.",
+                _ => "Usuario o contraseña incorrectos."
+            },
+            cancellationToken);
 
         return result.Status switch
         {

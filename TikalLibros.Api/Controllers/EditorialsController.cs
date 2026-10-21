@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Editorials;
@@ -10,6 +11,7 @@ namespace TikalLibros.Api.Controllers;
 /// <summary>
 /// Editoriales del catálogo. Usa los permisos de Catálogo.
 /// </summary>
+[AuditEntity("Editorial")]
 [ApiController]
 [Route("api/editoriales")]
 public sealed class EditorialsController : ControllerBase

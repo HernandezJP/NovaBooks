@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Suppliers;
@@ -10,6 +11,7 @@ namespace TikalLibros.Api.Controllers;
 /// <summary>
 /// Proveedores de libros. No se desactivan con órdenes de compra abiertas.
 /// </summary>
+[AuditEntity("Proveedor")]
 [ApiController]
 [Route("api/proveedores")]
 public sealed class SuppliersController : ControllerBase

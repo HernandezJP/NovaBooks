@@ -342,6 +342,8 @@ public static class IdentitySeeder
             InventoryPermissions.Adjust,
             InventoryPermissions.ViewMovements,
 
+            .. OrderPermissions.All,
+
             SalesPermissions.View,
             SalesPermissions.Create,
             SalesPermissions.Cancel,
@@ -371,6 +373,11 @@ public static class IdentitySeeder
             CatalogPermissions.View,
 
             InventoryPermissions.View,
+
+            OrderPermissions.View,
+            OrderPermissions.Create,
+            OrderPermissions.Update,
+            OrderPermissions.Cancel,
 
             SalesPermissions.View,
             SalesPermissions.Create,

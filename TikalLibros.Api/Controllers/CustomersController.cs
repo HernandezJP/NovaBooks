@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Customers;
@@ -7,6 +8,7 @@ using TikalLibros.Infrastructure.Security.Permissions;
 
 namespace TikalLibros.Api.Controllers;
 
+[AuditEntity("Cliente")]
 [ApiController]
 [Route("api/clientes")]
 public sealed class CustomersController : ControllerBase

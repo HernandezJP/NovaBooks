@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TikalLibros.Api.Auditing;
 using TikalLibros.Api.Common;
 using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Purchasing;
@@ -11,6 +12,7 @@ namespace TikalLibros.Api.Controllers;
 /// Recepciones de compra. Cada recepción actualiza el inventario en la
 /// misma transacción (lotes, existencias y movimiento de entrada).
 /// </summary>
+[AuditEntity("RecepcionCompra")]
 [ApiController]
 [Route("api/recepciones")]
 public sealed class ReceptionsController : ControllerBase
@@ -79,6 +81,7 @@ public sealed class ReceptionsController : ControllerBase
     [HasPermission(PurchasingPermissions.Approve)]
     [HasPermission(PurchasingPermissions.Receive)]
     [HttpPost("compra-directa")]
+    [AuditEntity("RecepcionCompra", "COMPRA_DIRECTA")]
     [ProducesResponseType(typeof(ReceptionResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]

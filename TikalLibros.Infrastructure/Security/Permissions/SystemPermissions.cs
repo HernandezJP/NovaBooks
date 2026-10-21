@@ -18,9 +18,11 @@ namespace TikalLibros.Infrastructure.Security.Permissions
             .. CatalogPermissions.All,
             .. PurchasingPermissions.All,
             .. InventoryPermissions.All,
+            .. OrderPermissions.All,
             .. SalesPermissions.All,
             .. CashPermissions.All,
-            .. ReportPermissions.All
+            .. ReportPermissions.All,
+            .. ConfigurationPermissions.All
             ];
         }
     }

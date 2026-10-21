@@ -53,4 +53,12 @@ public static class AppPermissions
     public const string InventoryViewCosts = "Inventario.VerCostos";
     public const string InventoryAdjust = "Inventario.Ajustar";
     public const string InventoryViewMovements = "Inventario.VerMovimientos";
+
+    public const string OrdersView = "Pedidos.Ver";
+    public const string OrdersCreate = "Pedidos.Crear";
+    public const string OrdersUpdate = "Pedidos.Modificar";
+    public const string OrdersApprove = "Pedidos.Aprobar";
+    public const string OrdersCancel = "Pedidos.Cancelar";
+
+    public const string ConfigurationParameters = "Configuracion.Parametros";
 }
