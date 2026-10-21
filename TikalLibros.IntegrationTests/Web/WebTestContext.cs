@@ -24,6 +24,13 @@ public abstract class WebTestContext : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
 
+        // Clientes de la API para renderizar páginas; se crean al pedirlos,
+        // cuando la API simulada ya existe.
+        Services.AddSingleton(_ => new SalesApi(Api));
+        Services.AddSingleton(_ => new OrdersApi(Api));
+        Services.AddSingleton(_ => new CashApi(Api));
+        Services.AddSingleton(_ => new ReportsApi(Api));
+
         Session = new SessionState(new ProtectedSessionStorage(JSInterop.JSRuntime, new EphemeralDataProtectionProvider()));
         Navigation = Services.GetRequiredService<NavigationManager>();
         Api = new ApiClient(
