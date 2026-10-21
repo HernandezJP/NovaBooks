@@ -48,6 +48,19 @@ namespace TikalLibros.Domain.Entities.Sales
 
         public DateTime? PED_FechaModificacion { get; set; }
 
+        /// <summary>Contado o crédito; decide si el pedido consume crédito del cliente.</summary>
+        public int? PED_TipoVentaId { get; set; }
+
+        /// <summary>Supervisor que aprobó o rechazó el pedido.</summary>
+        public int? PED_EmpleadoAprobadorId { get; set; }
+
+        public DateTime? PED_FechaAprobacion { get; set; }
+
+        /// <summary>Nota de la aprobación o motivo del rechazo.</summary>
+        public string? PED_ComentarioAprobacion { get; set; }
+
+        public string? PED_MotivoCancelacion { get; set; }
+
         public PB_CLIENTE Cliente { get; set; } = null!;
 
         public PB_SUCURSAL Sucursal { get; set; } = null!;
@@ -59,6 +72,10 @@ namespace TikalLibros.Domain.Entities.Sales
         public PB_ESTADO_PEDIDO EstadoPedido { get; set; } = null!;
 
         public PB_EMPLEADO Empleado { get; set; } = null!;
+
+        public PB_TIPO_VENTA? TipoVenta { get; set; }
+
+        public PB_EMPLEADO? EmpleadoAprobador { get; set; }
 
         public ICollection<PB_PEDIDO_CLIENTE_DETALLE> Detalles { get; set; } = [];
 

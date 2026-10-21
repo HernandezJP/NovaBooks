@@ -3921,9 +3921,16 @@ namespace TikalLibros.Infrastructure.Data.Migrations
                     b.Property<int>("PED_ClienteId")
                         .HasColumnType("int");
 
+                    b.Property<string>("PED_ComentarioAprobacion")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<decimal>("PED_Descuento")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("PED_EmpleadoAprobadorId")
+                        .HasColumnType("int");
 
                     b.Property<int>("PED_EmpleadoId")
                         .HasColumnType("int");
@@ -3935,6 +3942,9 @@ namespace TikalLibros.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTime?>("PED_FechaAprobacion")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime>("PED_FechaCreacion")
                         .ValueGeneratedOnAdd()
@@ -3953,6 +3963,10 @@ namespace TikalLibros.Infrastructure.Data.Migrations
 
                     b.Property<int>("PED_MonedaId")
                         .HasColumnType("int");
+
+                    b.Property<string>("PED_MotivoCancelacion")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("PED_Numero")
                         .IsRequired()
@@ -3977,6 +3991,9 @@ namespace TikalLibros.Infrastructure.Data.Migrations
                         .HasColumnType("decimal(18,6)")
                         .HasDefaultValue(1m);
 
+                    b.Property<int?>("PED_TipoVentaId")
+                        .HasColumnType("int");
+
                     b.Property<decimal>("PED_Total")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -3986,6 +4003,8 @@ namespace TikalLibros.Infrastructure.Data.Migrations
                     b.HasIndex("PED_AlmacenId");
 
                     b.HasIndex("PED_ClienteId");
+
+                    b.HasIndex("PED_EmpleadoAprobadorId");
 
                     b.HasIndex("PED_EmpleadoId");
 
@@ -4000,8 +4019,12 @@ namespace TikalLibros.Infrastructure.Data.Migrations
 
                     b.HasIndex("PED_SucursalId");
 
+                    b.HasIndex("PED_TipoVentaId");
+
                     b.ToTable("PB_PEDIDO_CLIENTE", null, t =>
                         {
+                            t.HasCheckConstraint("CK_PB_PEDIDO_APROBACION", "([PED_EmpleadoAprobadorId] IS NULL AND [PED_FechaAprobacion] IS NULL) OR ([PED_EmpleadoAprobadorId] IS NOT NULL AND [PED_FechaAprobacion] IS NOT NULL)");
+
                             t.HasCheckConstraint("CK_PB_PEDIDO_FECHAS", "[PED_FechaVencimientoReserva] IS NULL OR [PED_FechaVencimientoReserva] >= [PED_Fecha]");
 
                             t.HasCheckConstraint("CK_PB_PEDIDO_MONTOS", "[PED_Subtotal] >= 0 AND [PED_Descuento] >= 0 AND [PED_Impuesto] >= 0 AND [PED_Total] >= 0");
@@ -5608,6 +5631,11 @@ namespace TikalLibros.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("TikalLibros.Domain.Entities.Administration.PB_EMPLEADO", "EmpleadoAprobador")
+                        .WithMany()
+                        .HasForeignKey("PED_EmpleadoAprobadorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TikalLibros.Domain.Entities.Administration.PB_EMPLEADO", "Empleado")
                         .WithMany()
                         .HasForeignKey("PED_EmpleadoId")
@@ -5632,17 +5660,26 @@ namespace TikalLibros.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("TikalLibros.Domain.Entities.Sales.PB_TIPO_VENTA", "TipoVenta")
+                        .WithMany()
+                        .HasForeignKey("PED_TipoVentaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Almacen");
 
                     b.Navigation("Cliente");
 
                     b.Navigation("Empleado");
 
+                    b.Navigation("EmpleadoAprobador");
+
                     b.Navigation("EstadoPedido");
 
                     b.Navigation("Moneda");
 
                     b.Navigation("Sucursal");
+
+                    b.Navigation("TipoVenta");
                 });
 
             modelBuilder.Entity("TikalLibros.Domain.Entities.Sales.PB_PEDIDO_CLIENTE_DETALLE", b =>

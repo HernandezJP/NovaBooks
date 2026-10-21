@@ -175,6 +175,25 @@ public static class SalesConfiguration
                 .HasForeignKey(x => x.PED_EmpleadoId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            builder.Property(x => x.PED_FechaAprobacion)
+                .HasColumnType("datetime2");
+
+            builder.Property(x => x.PED_ComentarioAprobacion)
+                .HasMaxLength(500);
+
+            builder.Property(x => x.PED_MotivoCancelacion)
+                .HasMaxLength(500);
+
+            builder.HasOne(x => x.TipoVenta)
+                .WithMany()
+                .HasForeignKey(x => x.PED_TipoVentaId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasOne(x => x.EmpleadoAprobador)
+                .WithMany()
+                .HasForeignKey(x => x.PED_EmpleadoAprobadorId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             builder.ToTable(table =>
             {
                 table.HasCheckConstraint(
@@ -190,6 +209,12 @@ public static class SalesConfiguration
                     "CK_PB_PEDIDO_FECHAS",
                     "[PED_FechaVencimientoReserva] IS NULL OR " +
                     "[PED_FechaVencimientoReserva] >= [PED_Fecha]");
+
+                // Quien aprueba o rechaza y la fecha se guardan juntos.
+                table.HasCheckConstraint(
+                    "CK_PB_PEDIDO_APROBACION",
+                    "([PED_EmpleadoAprobadorId] IS NULL AND [PED_FechaAprobacion] IS NULL) OR " +
+                    "([PED_EmpleadoAprobadorId] IS NOT NULL AND [PED_FechaAprobacion] IS NOT NULL)");
             });
         });
     }
