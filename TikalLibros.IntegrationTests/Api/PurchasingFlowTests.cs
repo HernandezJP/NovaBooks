@@ -23,20 +23,6 @@ public sealed class PurchasingFlowTests : ApiTestBase
     {
     }
 
-    private static string NewDpi()
-    {
-        while (true)
-        {
-            string body = RandomDigits(8);
-            int total = body.Select((digit, index) => (digit - '0') * (index + 2)).Sum();
-
-            if (total % 11 < 10)
-            {
-                return $"{body}{total % 11}0101";
-            }
-        }
-    }
-
     /// <summary>Empleado con usuario de los roles Compras e Inventario.</summary>
     private async Task<HttpClient> BuyerAsync(HttpClient admin)
     {

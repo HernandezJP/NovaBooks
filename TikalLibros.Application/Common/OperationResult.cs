@@ -5,12 +5,13 @@ public enum OperationErrorType
     None,
     Validation,
     NotFound,
-    Conflict
+    Conflict,
+    Forbidden
 }
 
 /// <summary>
 /// Resultado de una operación de negocio. La API traduce
-/// Validation a 400, NotFound a 404 y Conflict a 409.
+/// Validation a 400, Forbidden a 403, NotFound a 404 y Conflict a 409.
 /// </summary>
 public sealed class OperationResult<T>
 {
@@ -52,6 +53,17 @@ public sealed class OperationResult<T>
         {
             ErrorType = OperationErrorType.Conflict,
             Errors = errors
+        };
+    }
+
+    /// <summary>El usuario no tiene el permiso que esta operación concreta exige.</summary>
+    public static OperationResult<T> Forbidden(
+        string message)
+    {
+        return new OperationResult<T>
+        {
+            ErrorType = OperationErrorType.Forbidden,
+            Errors = [message]
         };
     }
 

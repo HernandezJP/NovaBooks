@@ -13,21 +13,6 @@ public sealed class EmployeesTests : ApiTestBase
     {
     }
 
-    /// <summary>DPI aleatorio con verificador válido (departamento y municipio 01).</summary>
-    private static string NewDpi()
-    {
-        while (true)
-        {
-            string body = RandomDigits(8);
-            int total = body.Select((digit, index) => (digit - '0') * (index + 2)).Sum();
-
-            if (total % 11 < 10)
-            {
-                return $"{body}{total % 11}0101";
-            }
-        }
-    }
-
     private static async Task<SaveEmployeeRequest> NewEmployeeAsync(HttpClient client)
     {
         EmployeeCatalogsResponse catalogs = (await client.GetFromJsonAsync<EmployeeCatalogsResponse>("api/empleados/catalogos"))!;

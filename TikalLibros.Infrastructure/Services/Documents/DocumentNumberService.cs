@@ -12,6 +12,7 @@ public static class DocumentTypes
     public const string PurchaseReception = "RECEPCION_COMPRA";
     public const string InventoryMovement = "MOVIMIENTO_INVENTARIO";
     public const string InventoryAdjustment = "AJUSTE_INVENTARIO";
+    public const string CashMovement = "MOVIMIENTO_CAJA";
 
     public static string PrefixFor(string type) => type switch
     {
@@ -19,6 +20,7 @@ public static class DocumentTypes
         PurchaseReception => "REC-",
         InventoryMovement => "MOV-",
         InventoryAdjustment => "AJU-",
+        CashMovement => "MCJ-",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Tipo de documento desconocido.")
     };
 }

@@ -356,6 +356,7 @@ public static class IdentitySeeder
             CashPermissions.View,
             CashPermissions.CreateIncome,
             CashPermissions.CreateExpense,
+            CashPermissions.CancelMovement,
 
             .. ReportPermissions.All
         ];
@@ -385,7 +386,11 @@ public static class IdentitySeeder
 
             CashPermissions.Open,
             CashPermissions.Close,
-            CashPermissions.View
+            CashPermissions.View,
+
+            // Ingresos manuales (fondo de cambio); los egresos y las
+            // anulaciones quedan para el supervisor.
+            CashPermissions.CreateIncome
         ];
     }
 

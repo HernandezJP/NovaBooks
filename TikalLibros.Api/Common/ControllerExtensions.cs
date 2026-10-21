@@ -9,7 +9,7 @@ public static class ControllerExtensions
 {
     /// <summary>
     /// Convierte un resultado fallido en ProblemDetails
-    /// (400 validación, 404 inexistente, 409 conflicto).
+    /// (400 validación, 403 sin permiso, 404 inexistente, 409 conflicto).
     /// </summary>
     public static ObjectResult OperationProblem<T>(
         this ControllerBase controller,
@@ -20,6 +20,10 @@ public static class ControllerExtensions
             OperationErrorType.NotFound => (
                 StatusCodes.Status404NotFound,
                 "Recurso no encontrado."),
+
+            OperationErrorType.Forbidden => (
+                StatusCodes.Status403Forbidden,
+                "Acceso denegado."),
 
             OperationErrorType.Conflict => (
                 StatusCodes.Status409Conflict,

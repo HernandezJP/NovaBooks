@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using TikalLibros.Application.Authentication;
+using TikalLibros.Application.DTOs.Employees;
 using TikalLibros.Application.DTOs.Roles;
 using TikalLibros.Application.DTOs.Users;
 
@@ -42,6 +43,21 @@ public abstract class ApiTestBase : IClassFixture<TikalLibrosApiFactory>
         string body = "978" + RandomDigits(9);
         int sum = body.Select((digit, index) => (digit - '0') * (index % 2 == 0 ? 1 : 3)).Sum();
         return body + ((10 - sum % 10) % 10);
+    }
+
+    /// <summary>DPI aleatorio con verificador válido (departamento y municipio 01).</summary>
+    protected static string NewDpi()
+    {
+        while (true)
+        {
+            string body = RandomDigits(8);
+            int total = body.Select((digit, index) => (digit - '0') * (index + 2)).Sum();
+
+            if (total % 11 < 10)
+            {
+                return $"{body}{total % 11}0101";
+            }
+        }
     }
 
     protected HttpClient Anonymous() => Factory.CreateClient();
@@ -95,6 +111,49 @@ public abstract class ApiTestBase : IClassFixture<TikalLibrosApiFactory>
         UserResponse user = (await userResponse.Content.ReadFromJsonAsync<UserResponse>())!;
 
         return (userName, user.Id);
+    }
+
+    /// <summary>
+    /// Empleado nuevo con un usuario que solo tiene los permisos indicados;
+    /// devuelve el cliente ya autenticado y el id del empleado.
+    /// </summary>
+    protected async Task<(HttpClient Client, int EmployeeId)> EmployeeClientAsync(params string[] permissions)
+    {
+        HttpClient admin = await AdminAsync();
+
+        EmployeeCatalogsResponse catalogs = (await admin.GetFromJsonAsync<EmployeeCatalogsResponse>("api/empleados/catalogos"))!;
+        HttpResponseMessage employeeResponse = await admin.PostAsJsonAsync("api/empleados", new SaveEmployeeRequest
+        {
+            FirstName = "Prueba",
+            LastName = UniqueName("Empleado"),
+            Dpi = NewDpi(),
+            PositionId = catalogs.Positions.First().Id,
+            BranchId = catalogs.Branches.First().Id,
+            HireDate = DateOnly.FromDateTime(DateTime.Today)
+        });
+        Assert.Equal(HttpStatusCode.Created, employeeResponse.StatusCode);
+        EmployeeResponse employee = (await employeeResponse.Content.ReadFromJsonAsync<EmployeeResponse>())!;
+
+        string roleName = Unique("Rol");
+        HttpResponseMessage roleResponse = await admin.PostAsJsonAsync("api/roles", new CreateRoleRequest { Name = roleName });
+        Assert.Equal(HttpStatusCode.Created, roleResponse.StatusCode);
+        RoleResponse role = (await roleResponse.Content.ReadFromJsonAsync<RoleResponse>())!;
+        Assert.Equal(HttpStatusCode.OK, (await admin.PutAsJsonAsync(
+            $"api/roles/{role.Id}/permisos",
+            new AssignRolePermissionsRequest { Permissions = permissions.ToList() })).StatusCode);
+
+        string userName = Unique("empleado");
+        HttpResponseMessage userResponse = await admin.PostAsJsonAsync("api/usuarios", new CreateUserRequest
+        {
+            UserName = userName,
+            Email = $"{userName}@tikallibros.test",
+            Password = TestPassword,
+            Roles = [roleName],
+            EmployeeId = employee.Id
+        });
+        Assert.Equal(HttpStatusCode.Created, userResponse.StatusCode);
+
+        return (await LoginAsync(userName, TestPassword), employee.Id);
     }
 
     protected static async Task<JsonElement> ReadJsonAsync(HttpResponseMessage response)
