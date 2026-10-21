@@ -35,8 +35,8 @@ public sealed class AuthorizationTests : ApiTestBase
         (string userName, _) = await CreateUserWithPermissionsAsync("Clientes.Ver");
         HttpClient client = await LoginAsync(userName, TestPassword);
 
-        List<MenuGroupResponse>? menu = await client.GetFromJsonAsync<List<MenuGroupResponse>>("api/menu");
-        List<string> hrefs = menu!.SelectMany(group => group.Items).Select(item => item.Href).ToList();
+        List<MenuGroupResponse> menu = (await client.GetFromJsonAsync<List<MenuGroupResponse>>("api/menu"))!;
+        List<string> hrefs = menu.SelectMany(group => group.Items).Select(item => item.Href).ToList();
 
         Assert.Contains(hrefs, href => href.Contains("clientes"));
         Assert.DoesNotContain(menu, group => group.Key == "configuracion");
