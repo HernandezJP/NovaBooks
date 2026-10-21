@@ -16,6 +16,7 @@ using TikalLibros.Infrastructure.Services.Inventory;
 using TikalLibros.Infrastructure.Services.Audit;
 using TikalLibros.Infrastructure.Services.Cash;
 using TikalLibros.Infrastructure.Services.Sales;
+using TikalLibros.Infrastructure.Services.Reports;
 using TikalLibros.Infrastructure.Services.Configuration;
 using TikalLibros.Infrastructure.Data.Seed;
 
@@ -149,6 +150,10 @@ public static class DependencyInjection
         services.AddScoped<IOrderService>(provider => provider.GetRequiredService<OrderService>());
 
         services.AddScoped<ISaleService, SaleService>();
+
+        services.AddScoped<IAuditService, AuditService>();
+
+        services.AddScoped<IReportService, ReportService>();
 
         services.AddScoped<PurchaseOrderService>();
 

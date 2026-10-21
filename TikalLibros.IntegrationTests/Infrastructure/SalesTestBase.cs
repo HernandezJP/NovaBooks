@@ -1,12 +1,16 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
 using TikalLibros.Application.Common;
+using TikalLibros.Application.DTOs.Cash;
 using TikalLibros.Application.DTOs.Customers;
 using TikalLibros.Application.DTOs.Inventory;
 using TikalLibros.Application.DTOs.Products;
 using TikalLibros.Application.DTOs.Purchasing;
 using TikalLibros.Application.DTOs.Sales;
 using TikalLibros.Application.DTOs.Suppliers;
+using TikalLibros.Domain.Entities.Cash;
+using TikalLibros.Infrastructure.Data.Seed;
 
 namespace TikalLibros.IntegrationTests.Infrastructure;
 
@@ -108,4 +112,58 @@ public abstract class SalesTestBase : ApiTestBase
 
     protected static Task<HttpResponseMessage> ConfirmAsync(HttpClient client, int order) =>
         client.PostAsync($"api/pedidos/{order}/confirmar", null);
+
+    /// <summary>Abre una caja nueva para el usuario si no tiene una abierta.</summary>
+    protected async Task<CashSessionResponse> EnsureCashAsync(HttpClient client)
+    {
+        HttpResponseMessage current = await client.GetAsync("api/caja/aperturas/actual");
+
+        if (current.StatusCode == HttpStatusCode.OK)
+        {
+            return (await current.Content.ReadFromJsonAsync<CashSessionResponse>())!;
+        }
+
+        int register = await Factory.QueryAsync(async context =>
+        {
+            int branch = await context.Sucursales
+                .Where(item => item.SUC_Codigo == OrganizationSeeder.MainBranchCode)
+                .Select(item => item.SUC_Sucursal)
+                .SingleAsync();
+
+            PB_CAJA created = new()
+            {
+                CAJ_SucursalId = branch,
+                CAJ_Codigo = Unique("CV").ToUpperInvariant(),
+                CAJ_Nombre = Unique("Caja de ventas "),
+                CAJ_Activo = true
+            };
+
+            context.Cajas.Add(created);
+            await context.SaveChangesAsync();
+            return created.CAJ_Caja;
+        });
+
+        return await OkAsync<CashSessionResponse>(
+            await client.PostAsJsonAsync("api/caja/aperturas", new OpenCashSessionRequest { CashRegisterId = register, InitialAmount = 100m }),
+            HttpStatusCode.Created);
+    }
+
+    protected static async Task<int> MethodAsync(HttpClient client, string code) =>
+        (await client.GetFromJsonAsync<SaleCatalogsResponse>("api/ventas/catalogos"))!.PaymentMethods.Single(method => method.Code == code).Id;
+
+    protected static async Task<PaymentRequest> CashAsync(HttpClient client, decimal amount, decimal? received = null) =>
+        new() { PaymentMethodId = await MethodAsync(client, PaymentMethodCode.Cash), Amount = amount, Received = received };
+
+    protected static async Task<PaymentRequest> CardAsync(HttpClient client, decimal amount) =>
+        new() { PaymentMethodId = await MethodAsync(client, PaymentMethodCode.Card), Amount = amount, Authorization = "A12345", LastFourDigits = "4242" };
+
+    protected static DirectSaleRequest Sale(int? customer, IEnumerable<PaymentRequest> payments, params (int Book, int Quantity, decimal Discount)[] lines) => new()
+    {
+        CustomerId = customer,
+        Lines = lines.Select(line => new OrderLineRequest { BookId = line.Book, Quantity = line.Quantity, DiscountPercent = line.Discount }).ToList(),
+        Payments = payments.ToList()
+    };
+
+    protected static Task<HttpResponseMessage> SellAsync(HttpClient client, DirectSaleRequest request) =>
+        client.PostAsJsonAsync("api/ventas", request);
 }
