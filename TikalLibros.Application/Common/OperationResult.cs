@@ -27,6 +27,23 @@ public sealed class OperationResult<T>
     public IReadOnlyCollection<string> Errors { get; private init; } =
         Array.Empty<string>();
 
+    /// <summary>El mismo error con otro tipo de dato (para propagar fallos entre operaciones).</summary>
+    public OperationResult<TOther> As<TOther>()
+    {
+        if (Succeeded)
+        {
+            throw new InvalidOperationException("Solo un resultado fallido puede convertirse.");
+        }
+
+        return ErrorType switch
+        {
+            OperationErrorType.NotFound => OperationResult<TOther>.Missing(Errors.First()),
+            OperationErrorType.Conflict => OperationResult<TOther>.Conflict(Errors.ToArray()),
+            OperationErrorType.Forbidden => OperationResult<TOther>.Forbidden(Errors.First()),
+            _ => OperationResult<TOther>.Failure(Errors.ToArray())
+        };
+    }
+
     public static OperationResult<T> Success(T data)
     {
         return new OperationResult<T>

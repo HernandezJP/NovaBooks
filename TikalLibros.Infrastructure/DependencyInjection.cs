@@ -148,13 +148,17 @@ public static class DependencyInjection
 
         services.AddScoped<IOrderService>(provider => provider.GetRequiredService<OrderService>());
 
+        services.AddScoped<ISaleService, SaleService>();
+
         services.AddScoped<PurchaseOrderService>();
 
         services.AddScoped<IPurchaseOrderService>(provider => provider.GetRequiredService<PurchaseOrderService>());
 
         services.AddScoped<IReceptionService, ReceptionService>();
 
-        services.AddScoped<IInventoryService, InventoryService>();
+        services.AddScoped<InventoryService>();
+
+        services.AddScoped<IInventoryService>(provider => provider.GetRequiredService<InventoryService>());
 
         services.AddScoped<DemoOperationsSeeder>();
 

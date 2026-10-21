@@ -14,6 +14,7 @@ public static class DocumentTypes
     public const string InventoryAdjustment = "AJUSTE_INVENTARIO";
     public const string CashMovement = "MOVIMIENTO_CAJA";
     public const string CustomerOrder = "PEDIDO_CLIENTE";
+    public const string Sale = "VENTA";
 
     public static string PrefixFor(string type) => type switch
     {
@@ -23,6 +24,7 @@ public static class DocumentTypes
         InventoryAdjustment => "AJU-",
         CashMovement => "MCJ-",
         CustomerOrder => "PED-",
+        Sale => "VEN-",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Tipo de documento desconocido.")
     };
 }

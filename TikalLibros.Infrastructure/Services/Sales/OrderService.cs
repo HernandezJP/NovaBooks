@@ -392,6 +392,39 @@ public sealed class OrderService : IOrderService
             cancellationToken);
     }
 
+    /// <summary>Línea con precio de lista, descuento e IVA ya calculados.</summary>
+    internal sealed record PricedLine(
+        int BookId,
+        string Title,
+        decimal Quantity,
+        decimal UnitPrice,
+        decimal DiscountPercent,
+        decimal TaxPercent,
+        SaleLineAmounts Amounts);
+
+    /// <summary>Pedido o venta validado y calculado, antes de guardarse.</summary>
+    internal sealed record SaleDraft(
+        int? CustomerId,
+        int CreditDays,
+        int SaleTypeId,
+        string SaleTypeCode,
+        int WarehouseId,
+        int BranchId,
+        IReadOnlyList<PricedLine> Lines)
+    {
+        public bool IsCredit => SaleTypeCode == SaleType.Credit;
+
+        public decimal Subtotal => Lines.Sum(line => line.Amounts.Subtotal);
+
+        public decimal Discount => Lines.Sum(line => line.Amounts.Discount);
+
+        public decimal Tax => Lines.Sum(line => line.Amounts.Tax);
+
+        public decimal Total => Lines.Sum(line => line.Amounts.Total);
+
+        public decimal HighestDiscount => Lines.Select(line => line.DiscountPercent).DefaultIfEmpty(0).Max();
+    }
+
     /// <summary>Cliente, condición de pago, precios y descuentos; deja el pedido calculado.</summary>
     private async Task<OperationResult<OrderResponse>?> ApplyAsync(
         PB_PEDIDO_CLIENTE order,
@@ -399,73 +432,140 @@ public sealed class OrderService : IOrderService
         SalesPermissionSet permissions,
         CancellationToken cancellationToken)
     {
-        List<string> errors = [];
+        OperationResult<SaleDraft> prepared = await PrepareAsync(
+            request.CustomerId, request.SaleType, request.PriceListId, request.WarehouseId, request.Lines, permissions, cancellationToken);
 
-        var customer = await _context.Clientes
-            .Where(item => item.CLI_Cliente == request.CustomerId)
-            .Select(item => new { item.CLI_Cliente, item.CLI_Codigo, item.CLI_Activo, item.CLI_LimiteCredito, item.CLI_DiasCredito })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (customer is null)
+        if (!prepared.Succeeded)
         {
-            return OperationResult<OrderResponse>.Failure("El cliente seleccionado no existe.");
+            return prepared.As<OrderResponse>();
         }
 
-        if (!customer.CLI_Activo)
+        SaleDraft draft = prepared.Data!;
+
+        order.PED_ClienteId = draft.CustomerId!.Value;
+        order.PED_TipoVentaId = draft.SaleTypeId;
+        order.PED_AlmacenId = draft.WarehouseId;
+        order.PED_SucursalId = draft.BranchId;
+        order.PED_Observaciones = Clean(request.Notes);
+
+        int number = 1;
+
+        foreach (PricedLine line in draft.Lines)
         {
-            return OperationResult<OrderResponse>.Conflict($"El cliente {customer.CLI_Codigo} está inactivo; no se le pueden registrar pedidos.");
+            order.Detalles.Add(new PB_PEDIDO_CLIENTE_DETALLE
+            {
+                PDD_LibroId = line.BookId,
+                PDD_NumeroLinea = number++,
+                PDD_Cantidad = line.Quantity,
+                PDD_PrecioUnitario = line.UnitPrice,
+                PDD_PorcentajeDescuento = line.DiscountPercent,
+                PDD_MontoDescuento = line.Amounts.Discount,
+                PDD_PorcentajeImpuesto = line.TaxPercent,
+                PDD_MontoImpuesto = line.Amounts.Tax,
+                PDD_Subtotal = line.Amounts.Subtotal,
+                PDD_Total = line.Amounts.Total
+            });
         }
 
+        order.PED_Subtotal = draft.Subtotal;
+        order.PED_Descuento = draft.Discount;
+        order.PED_Impuesto = draft.Tax;
+        order.PED_Total = draft.Total;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Valida cliente, condición de pago, almacén, lista de precios, libros y
+    /// descuentos, y calcula cada línea con el precio vigente. Lo usan los
+    /// pedidos y la venta de mostrador (que admite consumidor final al contado).
+    /// </summary>
+    internal async Task<OperationResult<SaleDraft>> PrepareAsync(
+        int? customerId,
+        string saleTypeCode,
+        int? priceListId,
+        int? warehouseId,
+        IReadOnlyList<OrderLineRequest> lines,
+        SalesPermissionSet permissions,
+        CancellationToken cancellationToken)
+    {
         var saleType = await _context.TiposVenta
-            .Where(item => item.TVE_Codigo == request.SaleType && item.TVE_Activo)
+            .Where(item => item.TVE_Codigo == saleTypeCode && item.TVE_Activo)
             .Select(item => new { item.TVE_TipoVenta, item.TVE_Codigo })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (saleType is null)
         {
-            return OperationResult<OrderResponse>.Failure("La condición de pago no existe o está inactiva.");
+            return OperationResult<SaleDraft>.Failure("La condición de pago no existe o está inactiva.");
         }
 
-        if (saleType.TVE_Codigo == SaleType.Credit)
+        bool isCredit = saleType.TVE_Codigo == SaleType.Credit;
+        int creditDays = 0;
+
+        if (customerId is null)
         {
-            if (!permissions.CanSellOnCredit)
+            if (isCredit)
             {
-                return OperationResult<OrderResponse>.Forbidden("No tiene permiso para registrar pedidos al crédito.");
+                return OperationResult<SaleDraft>.Failure("Seleccione el cliente: las ventas al crédito requieren un cliente.");
+            }
+        }
+        else
+        {
+            var customer = await _context.Clientes
+                .Where(item => item.CLI_Cliente == customerId)
+                .Select(item => new { item.CLI_Codigo, item.CLI_Activo, item.CLI_LimiteCredito, item.CLI_DiasCredito })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (customer is null)
+            {
+                return OperationResult<SaleDraft>.Failure("El cliente seleccionado no existe.");
             }
 
-            if (customer.CLI_LimiteCredito <= 0 || customer.CLI_DiasCredito <= 0)
+            if (!customer.CLI_Activo)
             {
-                return OperationResult<OrderResponse>.Conflict(
+                return OperationResult<SaleDraft>.Conflict($"El cliente {customer.CLI_Codigo} está inactivo; no se le pueden registrar pedidos ni ventas.");
+            }
+
+            if (isCredit && (customer.CLI_LimiteCredito <= 0 || customer.CLI_DiasCredito <= 0))
+            {
+                return OperationResult<SaleDraft>.Conflict(
                     $"El cliente {customer.CLI_Codigo} no tiene crédito autorizado (límite y días de crédito).");
             }
+
+            creditDays = customer.CLI_DiasCredito;
         }
 
-        if (request.Lines.Any(line => line.DiscountPercent > 0) && !permissions.CanApplyDiscount)
+        if (isCredit && !permissions.CanSellOnCredit)
         {
-            return OperationResult<OrderResponse>.Forbidden("No tiene permiso para aplicar descuentos.");
+            return OperationResult<SaleDraft>.Forbidden("No tiene permiso para vender al crédito.");
+        }
+
+        if (lines.Any(line => line.DiscountPercent > 0) && !permissions.CanApplyDiscount)
+        {
+            return OperationResult<SaleDraft>.Forbidden("No tiene permiso para aplicar descuentos.");
         }
 
         decimal maximumDiscount = await _parameters.GetDecimalAsync(SystemParameterKeys.MaximumDiscount, cancellationToken);
 
-        int? warehouseId = request.WarehouseId ?? await MainWarehouseIdAsync(cancellationToken);
-        var warehouse = await _context.Almacenes
-            .Where(item => item.ALM_Almacen == warehouseId && item.ALM_Activo)
+        int? warehouse = warehouseId ?? await MainWarehouseIdAsync(cancellationToken);
+        var store = await _context.Almacenes
+            .Where(item => item.ALM_Almacen == warehouse && item.ALM_Activo)
             .Select(item => new { item.ALM_Almacen, item.ALM_SucursalId })
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (warehouse is null)
+        if (store is null)
         {
-            return OperationResult<OrderResponse>.Failure("El almacén seleccionado no existe o está inactivo.");
+            return OperationResult<SaleDraft>.Failure("El almacén seleccionado no existe o está inactivo.");
         }
 
-        int? priceListId = request.PriceListId ?? await DefaultPriceListIdAsync(cancellationToken);
+        int? priceList = priceListId ?? await DefaultPriceListIdAsync(cancellationToken);
 
-        if (priceListId is null || !await _context.ListasPrecio.AnyAsync(item => item.LPR_ListaPrecio == priceListId && item.LPR_Activo, cancellationToken))
+        if (priceList is null || !await _context.ListasPrecio.AnyAsync(item => item.LPR_ListaPrecio == priceList && item.LPR_Activo, cancellationToken))
         {
-            return OperationResult<OrderResponse>.Failure("La lista de precios seleccionada no existe o está inactiva.");
+            return OperationResult<SaleDraft>.Failure("La lista de precios seleccionada no existe o está inactiva.");
         }
 
-        int[] bookIds = request.Lines.Select(line => line.BookId!.Value).ToArray();
+        int[] bookIds = lines.Select(line => line.BookId!.Value).ToArray();
         DateTime now = DateTime.UtcNow;
 
         var books = await _context.Libros
@@ -478,7 +578,7 @@ public sealed class OrderService : IOrderService
                 book.LIB_PermiteVenta,
                 Tax = book.Impuesto.IMP_Porcentaje,
                 Price = book.Precios
-                    .Where(price => price.LIP_ListaPrecioId == priceListId && price.LIP_Activo &&
+                    .Where(price => price.LIP_ListaPrecioId == priceList && price.LIP_Activo &&
                                     price.LIP_FechaInicio <= now && (price.LIP_FechaFin == null || price.LIP_FechaFin > now))
                     .OrderByDescending(price => price.LIP_FechaInicio)
                     .Select(price => (decimal?)price.LIP_Precio)
@@ -486,9 +586,12 @@ public sealed class OrderService : IOrderService
             })
             .ToDictionaryAsync(book => book.LIB_Libro, cancellationToken);
 
-        for (int index = 0; index < request.Lines.Count; index++)
+        List<string> errors = [];
+        List<PricedLine> priced = [];
+
+        for (int index = 0; index < lines.Count; index++)
         {
-            OrderLineRequest line = request.Lines[index];
+            OrderLineRequest line = lines[index];
 
             if (!books.TryGetValue(line.BookId!.Value, out var book))
             {
@@ -509,47 +612,27 @@ public sealed class OrderService : IOrderService
             {
                 errors.Add($"Línea {index + 1}: el descuento máximo permitido es {maximumDiscount:0.##} %.");
             }
+
+            if (errors.Count == 0)
+            {
+                priced.Add(new PricedLine(
+                    book.LIB_Libro,
+                    book.LIB_Titulo,
+                    line.Quantity!.Value,
+                    book.Price!.Value,
+                    line.DiscountPercent,
+                    book.Tax,
+                    SaleLineAmounts.Calculate(line.Quantity!.Value, book.Price!.Value, line.DiscountPercent, book.Tax)));
+            }
         }
 
         if (errors.Count > 0)
         {
-            return OperationResult<OrderResponse>.Failure(errors.ToArray());
+            return OperationResult<SaleDraft>.Failure(errors.ToArray());
         }
 
-        order.PED_ClienteId = customer.CLI_Cliente;
-        order.PED_TipoVentaId = saleType.TVE_TipoVenta;
-        order.PED_AlmacenId = warehouse.ALM_Almacen;
-        order.PED_SucursalId = warehouse.ALM_SucursalId;
-        order.PED_Observaciones = Clean(request.Notes);
-
-        int number = 1;
-
-        foreach (OrderLineRequest line in request.Lines)
-        {
-            var book = books[line.BookId!.Value];
-            SaleLineAmounts amounts = SaleLineAmounts.Calculate(line.Quantity!.Value, book.Price!.Value, line.DiscountPercent, book.Tax);
-
-            order.Detalles.Add(new PB_PEDIDO_CLIENTE_DETALLE
-            {
-                PDD_LibroId = book.LIB_Libro,
-                PDD_NumeroLinea = number++,
-                PDD_Cantidad = line.Quantity!.Value,
-                PDD_PrecioUnitario = book.Price!.Value,
-                PDD_PorcentajeDescuento = line.DiscountPercent,
-                PDD_MontoDescuento = amounts.Discount,
-                PDD_PorcentajeImpuesto = book.Tax,
-                PDD_MontoImpuesto = amounts.Tax,
-                PDD_Subtotal = amounts.Subtotal,
-                PDD_Total = amounts.Total
-            });
-        }
-
-        order.PED_Subtotal = order.Detalles.Sum(line => line.PDD_Subtotal);
-        order.PED_Descuento = order.Detalles.Sum(line => line.PDD_MontoDescuento);
-        order.PED_Impuesto = order.Detalles.Sum(line => line.PDD_MontoImpuesto);
-        order.PED_Total = order.Detalles.Sum(line => line.PDD_Total);
-
-        return null;
+        return OperationResult<SaleDraft>.Success(new SaleDraft(
+            customerId, creditDays, saleType.TVE_TipoVenta, saleType.TVE_Codigo, store.ALM_Almacen, store.ALM_SucursalId, priced));
     }
 
     // ─────────────────────── Confirmación y aprobación ───────────────────────
@@ -925,24 +1008,42 @@ public sealed class OrderService : IOrderService
     }
 
     /// <summary>Motivos por los que el pedido requiere aprobación (vacío si no la requiere).</summary>
-    private async Task<IReadOnlyCollection<string>> ApprovalReasonsAsync(PB_PEDIDO_CLIENTE order, CancellationToken cancellationToken)
+    private async Task<IReadOnlyCollection<string>> ApprovalReasonsAsync(PB_PEDIDO_CLIENTE order, CancellationToken cancellationToken) =>
+        await ApprovalReasonsAsync(
+            order.Detalles.Select(line => line.PDD_PorcentajeDescuento).DefaultIfEmpty(0).Max(),
+            await IsCreditAsync(order, cancellationToken),
+            order.PED_ClienteId,
+            order.PED_Total,
+            order.PED_PedidoCliente,
+            cancellationToken);
+
+    /// <summary>
+    /// Requiere aprobación si algún descuento supera el permitido sin
+    /// aprobación, o si al crédito el monto excede el crédito disponible.
+    /// </summary>
+    internal async Task<IReadOnlyCollection<string>> ApprovalReasonsAsync(
+        decimal highestDiscount,
+        bool isCredit,
+        int? customerId,
+        decimal creditAmount,
+        int? exceptOrderId,
+        CancellationToken cancellationToken)
     {
         List<string> reasons = [];
         decimal threshold = await _parameters.GetDecimalAsync(SystemParameterKeys.DiscountWithoutApproval, cancellationToken);
-        decimal highest = order.Detalles.Select(line => line.PDD_PorcentajeDescuento).DefaultIfEmpty(0).Max();
 
-        if (highest > threshold)
+        if (highestDiscount > threshold)
         {
-            reasons.Add($"Descuento de {highest.ToString("0.##", CultureInfo.InvariantCulture)} % (sin aprobación se permite hasta {threshold.ToString("0.##", CultureInfo.InvariantCulture)} %).");
+            reasons.Add($"Descuento de {highestDiscount.ToString("0.##", CultureInfo.InvariantCulture)} % (sin aprobación se permite hasta {threshold.ToString("0.##", CultureInfo.InvariantCulture)} %).");
         }
 
-        if (await IsCreditAsync(order, cancellationToken))
+        if (isCredit && customerId is int customer)
         {
-            (decimal limit, decimal used) = await CreditAsync(order.PED_ClienteId, order.PED_PedidoCliente, cancellationToken);
+            (decimal limit, decimal used) = await CreditAsync(customer, exceptOrderId, cancellationToken);
 
-            if (used + order.PED_Total > limit)
+            if (used + creditAmount > limit)
             {
-                reasons.Add($"Excede el crédito del cliente: límite Q{limit:N2}, saldo usado Q{used:N2} y el pedido suma Q{order.PED_Total:N2}.");
+                reasons.Add($"Excede el crédito del cliente: límite Q{limit:N2}, saldo usado Q{used:N2} y se suman Q{creditAmount:N2}.");
             }
         }
 

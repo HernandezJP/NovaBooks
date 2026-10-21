@@ -878,9 +878,10 @@ public sealed class InventoryService : IInventoryService
 
     /// <summary>
     /// Retira la cantidad de los lotes más antiguos (PEPS) y agrega una línea
-    /// de movimiento por lote. Devuelve el costo promedio retirado.
+    /// de movimiento por lote. Devuelve el costo promedio retirado. Las ventas
+    /// lo usan para la salida de inventario.
     /// </summary>
-    private async Task<decimal> ConsumeLotsAsync(
+    internal async Task<decimal> ConsumeLotsAsync(
         PB_MOVIMIENTO_INVENTARIO movement,
         int warehouseId,
         int bookId,
