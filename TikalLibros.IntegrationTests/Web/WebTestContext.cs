@@ -30,6 +30,8 @@ public abstract class WebTestContext : BunitContext
         Services.AddSingleton(_ => new OrdersApi(Api!));
         Services.AddSingleton(_ => new CashApi(Api!));
         Services.AddSingleton(_ => new ReportsApi(Api!));
+        Services.AddSingleton(_ => new CustomersApi(Api!));
+        Services.AddSingleton(_ => Session!);
 
         Session = new SessionState(new ProtectedSessionStorage(JSInterop.JSRuntime, new EphemeralDataProtectionProvider()));
         Navigation = Services.GetRequiredService<NavigationManager>();

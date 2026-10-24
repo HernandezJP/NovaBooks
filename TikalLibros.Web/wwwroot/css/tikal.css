@@ -2279,3 +2279,32 @@ body,
         max-width: none;
     }
 }
+
+/* Buscador de cliente con alta rápida: ocupa la fila completa del formulario. */
+.customer-picker {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tl-space-2);
+}
+
+.customer-picker__search {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.customer-picker__new {
+    flex: 0 0 auto;
+    margin-top: 6px !important;
+    white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+    .customer-picker {
+        flex-wrap: wrap;
+    }
+
+    .customer-picker__new {
+        margin-top: 0 !important;
+    }
+}

@@ -1,25 +1,49 @@
-@* Búsqueda de clientes activos por nombre, código o NIT. *@
+@* Búsqueda de clientes activos por nombre, código o NIT, con alta rápida
+   de un cliente nuevo sin salir de la venta o el pedido. *@
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Customers
 @inject CustomersApi CustomersApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
 
-<MudAutocomplete T="CustomerListItemResponse" Label="@Label" Value="Value" ValueChanged="ValueChanged"
-                 SearchFunc="SearchAsync" ToStringFunc="@(item => item is null ? null : $"{item.DisplayName} ({item.Code})")"
-                 Placeholder="Nombre, código o NIT" Clearable="true" ResetValueOnEmptyText="true" CoerceText="false"
-                 MaxItems="20" Dense="true" DebounceInterval="300" MinCharacters="2" Disabled="Disabled"
-                 Error="Error" ErrorText="@ErrorText" HelperText="@HelperText"
-                 Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain">
-    <ItemTemplate Context="customer">
-        <div>
-            <div class="cell-primary">@customer.DisplayName</div>
-            <div class="cell-secondary">
-                @customer.Code @(customer.Nit is null ? "" : $"· NIT {customer.Nit}")
-                @(customer.CreditLimit > 0 ? $"· crédito Q {customer.CreditLimit:N2} a {customer.CreditDays} días" : "")
+<div class="customer-picker">
+    <MudAutocomplete T="CustomerListItemResponse" Label="@Label" Value="Value" ValueChanged="ValueChanged"
+                     SearchFunc="SearchAsync" ToStringFunc="@(item => item is null ? null : $"{item.DisplayName} ({item.Code})")"
+                     Placeholder="Nombre, código o NIT" Clearable="true" ResetValueOnEmptyText="true" CoerceText="false"
+                     MaxItems="20" Dense="true" DebounceInterval="300" MinCharacters="2" Disabled="Disabled"
+                     Error="Error" ErrorText="@ErrorText" HelperText="@HelperText"
+                     Variant="Variant.Outlined" Margin="Margin.Dense" Class="customer-picker__search tl-filter-plain">
+        <ItemTemplate Context="customer">
+            <div>
+                <div class="cell-primary">@customer.DisplayName</div>
+                <div class="cell-secondary">
+                    @customer.Code @(customer.Nit is null ? "" : $"· NIT {customer.Nit}")
+                    @(customer.CreditLimit > 0 ? $"· crédito Q {customer.CreditLimit:N2} a {customer.CreditDays} días" : "")
+                </div>
             </div>
-        </div>
-    </ItemTemplate>
-    <NoItemsTemplate><div class="autocomplete-empty">No se encontraron clientes activos.</div></NoItemsTemplate>
-</MudAutocomplete>
+        </ItemTemplate>
+        <NoItemsTemplate>
+            <div class="autocomplete-empty">
+                No se encontraron clientes activos.
+                @if (CanCreate)
+                {
+                    <span> Use <b>Nuevo cliente</b> para registrarlo.</span>
+                }
+            </div>
+        </NoItemsTemplate>
+    </MudAutocomplete>
+
+    @if (CanCreate)
+    {
+        <MudTooltip Text="Registrar un cliente nuevo">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.PersonAdd"
+                       OnClick="CreateAsync" Disabled="Disabled" Class="customer-picker__new">
+                Nuevo cliente
+            </MudButton>
+        </MudTooltip>
+    }
+</div>
 
 @code {
     [Parameter]
@@ -43,11 +67,35 @@
     [Parameter]
     public bool Disabled { get; set; }
 
+    /// <summary>Muestra el botón de alta rápida (requiere Clientes.Crear).</summary>
+    [Parameter]
+    public bool AllowCreate { get; set; } = true;
+
+    private string? _lastSearch;
+
+    private bool CanCreate => AllowCreate && Session.HasPermission(AppPermissions.CustomersCreate);
+
     private async Task<IEnumerable<CustomerListItemResponse>> SearchAsync(string? text, CancellationToken token)
     {
+        _lastSearch = text;
+
         ApiResult<PagedResponse<CustomerListItemResponse>> result =
             await CustomersApi.GetPagedAsync(text, StatusFilter.Active, null, 1, 20, token);
 
         return result.Data?.Items ?? [];
+    }
+
+    private async Task CreateAsync()
+    {
+        DialogParameters<QuickCustomerDialog> parameters = new() { { dialog => dialog.InitialName, Value is null ? _lastSearch : null } };
+
+        CustomerListItemResponse? customer = await Dialogs.ShowFormAsync<QuickCustomerDialog, CustomerListItemResponse>(
+            "Nuevo cliente", parameters, DialogExtensions.WideFormOptions);
+
+        if (customer is not null)
+        {
+            Snackbar.Add($"Cliente {customer.DisplayName} ({customer.Code}) registrado.", Severity.Success);
+            await ValueChanged.InvokeAsync(customer);
+        }
     }
 }
