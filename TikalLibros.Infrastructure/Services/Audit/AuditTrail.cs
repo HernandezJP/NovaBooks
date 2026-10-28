@@ -36,6 +36,7 @@ public static class AuditActions
     public const string Reject = "RECHAZAR";
     public const string Cancel = "CANCELAR";
     public const string Annul = "ANULAR";
+    public const string Return = "DEVOLVER";
     public const string Expire = "VENCER";
     public const string Sell = "VENDER";
     public const string Pay = "PAGAR";

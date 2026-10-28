@@ -26,6 +26,9 @@ public static class SaleStatus
     public const string Partial = "PARCIAL";
     public const string Credit = "CREDITO";
     public const string Annulled = "ANULADA";
+
+    /// <summary>Todas las unidades se devolvieron.</summary>
+    public const string Returned = "DEVUELTA";
 }
 
 /// <summary>Códigos de tipo de venta.</summary>

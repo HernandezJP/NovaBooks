@@ -2278,6 +2278,15 @@ body,
         padding: 0;
         max-width: none;
     }
+
+    .print-only {
+        display: block !important;
+    }
+}
+
+/* Títulos que solo aparecen al imprimir (por ejemplo, la nota de crédito). */
+.print-only {
+    display: none;
 }
 
 /* Buscador de cliente con alta rápida: ocupa la fila completa del formulario. */

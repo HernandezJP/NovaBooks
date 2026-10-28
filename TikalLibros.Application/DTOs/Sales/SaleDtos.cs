@@ -164,6 +164,9 @@ public sealed class SaleListItemResponse
 
 public sealed class SaleLineResponse
 {
+    /// <summary>Id de la línea (las devoluciones se registran por línea).</summary>
+    public int LineId { get; set; }
+
     public int BookId { get; set; }
 
     public string BookCode { get; set; } = string.Empty;
@@ -186,6 +189,9 @@ public sealed class SaleLineResponse
 
     /// <summary>Costo de salida (PEPS); solo con Inventario.VerCostos.</summary>
     public decimal? UnitCost { get; set; }
+
+    /// <summary>Unidades ya devueltas en devoluciones vigentes.</summary>
+    public decimal ReturnedQuantity { get; set; }
 }
 
 public sealed class SalePaymentResponse
@@ -282,9 +288,17 @@ public sealed class SaleResponse
     /// <summary>Factura emitida con la venta (null en ventas anteriores a la facturación).</summary>
     public InvoiceSummaryResponse? Invoice { get; set; }
 
+    /// <summary>Total de devoluciones vigentes (notas de crédito).</summary>
+    public decimal Returned { get; set; }
+
+    public IReadOnlyCollection<SaleReturnSummaryResponse> Returns { get; set; } = [];
+
     public bool CanPay { get; set; }
 
     public bool CanAnnul { get; set; }
+
+    /// <summary>Quedan unidades por devolver y la venta no está anulada.</summary>
+    public bool CanReturn { get; set; }
 }
 
 /// <summary>Búsqueda avanzada de ventas: todos los filtros se combinan.</summary>

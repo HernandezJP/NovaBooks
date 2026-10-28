@@ -36,6 +36,14 @@ else
             </MudAlert>
         }
 
+        @if (_sale.Returned > 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">
+                Tiene devoluciones por Q @_sale.Returned.ToString("N2"). Lo devuelto de una venta al crédito se abona primero a su saldo
+                (aparece como pagado) y el resto se reembolsó por caja.
+            </MudAlert>
+        }
+
         <div class="stat-grid">
             <StatCard Tint="sky" Icon="@Icons.Material.Outlined.ReceiptLong" Label="Total" Value="@($"Q {_sale.Total:N2}")" />
             <StatCard Tint="mint" Icon="@Icons.Material.Outlined.Payments" Label="Pagado" Value="@($"Q {_sale.Paid:N2}")" />
@@ -102,6 +110,13 @@ else
                         Anular venta
                     </MudButton>
                 }
+                @if (_sale.CanReturn && Session.HasPermission(AppPermissions.SalesReturn))
+                {
+                    <MudButton Href="@($"/devoluciones/nueva?venta={_sale.Id}")" Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Outlined.AssignmentReturn">
+                        Registrar devolución
+                    </MudButton>
+                }
                 @if (_sale.CanPay && Session.HasPermission(AppPermissions.SalesCreate))
                 {
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Payments" OnClick="PayAsync">
@@ -117,6 +132,10 @@ else
                     <HeaderContent>
                         <MudTh>Libro</MudTh>
                         <MudTh Class="text-right">Cantidad</MudTh>
+                        @if (_sale.Returned > 0)
+                        {
+                            <MudTh Class="text-right">Devueltas</MudTh>
+                        }
                         <MudTh Class="text-right">Precio</MudTh>
                         <MudTh Class="text-right col-optional">Desc.</MudTh>
                         @if (ShowCosts)
@@ -131,6 +150,10 @@ else
                             <div class="cell-secondary">@context.BookCode</div>
                         </MudTd>
                         <MudTd Class="number">@context.Quantity.ToString("N0")</MudTd>
+                        @if (_sale.Returned > 0)
+                        {
+                            <MudTd Class="number">@context.ReturnedQuantity.ToString("N0")</MudTd>
+                        }
                         <MudTd Class="number">@context.UnitPrice.ToString("N2")</MudTd>
                         <MudTd Class="number col-optional">@context.DiscountPercent.ToString("0.##") %</MudTd>
                         @if (ShowCosts)
@@ -178,6 +201,28 @@ else
                 </MudTable>
             }
         </Panel>
+
+        @if (_sale.Returns.Count > 0)
+        {
+            <Panel Title="Devoluciones" Icon="@Icons.Material.Outlined.AssignmentReturn">
+                <MudTable Items="_sale.Returns" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table"
+                          RowClassFunc="@((SaleReturnSummaryResponse item, int _) => item.Annulled ? "row-muted" : string.Empty)">
+                    <HeaderContent>
+                        <MudTh>Devolución</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh Class="text-right">Total</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary"><a href="@($"/devoluciones/{context.Id}")">@context.Number</a></div>
+                            <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                        </MudTd>
+                        <MudTd><DocumentStatus Code="@(context.Annulled ? "ANULADA" : "PROCESADA")" Text="@(context.Annulled ? "Anulada" : "Procesada")" /></MudTd>
+                        <MudTd Class="number">@context.Total.ToString("N2")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </Panel>
+        }
     </div>
 }
 

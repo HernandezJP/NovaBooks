@@ -140,6 +140,33 @@ public sealed class SalesApi(ApiClient api)
         api.PostAsync<SaleResponse>($"api/ventas/{saleId}/anular", new AnnulSaleRequest { Reason = reason });
 }
 
+public sealed class ReturnsApi(ApiClient api)
+{
+    public Task<ApiResult<ReturnCatalogsResponse>> GetCatalogsAsync(CancellationToken cancellationToken = default) =>
+        api.GetAsync<ReturnCatalogsResponse>("api/devoluciones/catalogos", cancellationToken);
+
+    public Task<ApiResult<PagedResponse<ReturnListItemResponse>>> GetPagedAsync(ReturnQuery query, CancellationToken cancellationToken = default) =>
+        api.GetAsync<PagedResponse<ReturnListItemResponse>>(
+            QueryString.Build("api/devoluciones",
+                ("search", query.Search?.Trim()),
+                ("saleId", query.SaleId),
+                ("from", query.From?.ToString("yyyy-MM-dd")),
+                ("to", query.To?.ToString("yyyy-MM-dd")),
+                ("includeAnnulled", query.IncludeAnnulled),
+                ("page", query.Page),
+                ("pageSize", query.PageSize)),
+            cancellationToken);
+
+    public Task<ApiResult<ReturnResponse>> GetAsync(int id, CancellationToken cancellationToken = default) =>
+        api.GetAsync<ReturnResponse>($"api/devoluciones/{id}", cancellationToken);
+
+    public Task<ApiResult<ReturnResponse>> CreateAsync(SaveReturnRequest request) =>
+        api.PostAsync<ReturnResponse>("api/devoluciones", request);
+
+    public Task<ApiResult<ReturnResponse>> AnnulAsync(int id, string reason) =>
+        api.PostAsync<ReturnResponse>($"api/devoluciones/{id}/anular", new AnnulReturnRequest { Reason = reason });
+}
+
 public sealed class ReportsApi(ApiClient api)
 {
     private static (string, object?)[] Period(ReportPeriodQuery query) =>

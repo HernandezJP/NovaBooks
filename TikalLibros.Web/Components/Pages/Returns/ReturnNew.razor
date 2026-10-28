@@ -1,0 +1,344 @@
+@page "/devoluciones/nueva"
+@attribute [RequirePermission(AppPermissions.SalesReturn)]
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Sales
+@inject SalesApi SalesApi
+@inject ReturnsApi ReturnsApi
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Nueva devolución | Tikal Libros</PageTitle>
+
+<PageHeader Title="Nueva devolución" Breadcrumbs="_breadcrumbs"
+            Description="Indique cuántas unidades devuelve el cliente de cada libro y el motivo. El monto se calcula con el precio cobrado (descuento e IVA incluidos)." />
+
+@if (_loadError is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar los datos" Message="@_loadError" OnRetry="LoadAsync" /></div>
+}
+else if (_catalogs is null)
+{
+    <div class="panel"><LoadingState Rows="5" /></div>
+}
+else
+{
+    <div class="layout-stack">
+        <div class="panel">
+            <div class="list-toolbar">
+                <MudTextField @bind-Value="_saleNumber" Label="Número de venta" Placeholder="VEN-000123"
+                              MaxLength="30" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-series list-toolbar__search"
+                              OnKeyUp="@(args => args.Key == "Enter" ? FindSaleAsync() : Task.CompletedTask)" Disabled="_saving" />
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Search"
+                           OnClick="FindSaleAsync" Disabled="@(_saving || string.IsNullOrWhiteSpace(_saleNumber))">
+                    Buscar venta
+                </MudButton>
+            </div>
+            @if (_saleError is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@_saleError</MudAlert>
+            }
+            @if (_sale is not null)
+            {
+                <dl class="detail-list mt-3">
+                    <dt>Venta</dt>
+                    <dd><a href="@($"/ventas/{_sale.Id}")">@_sale.Number</a> · @_sale.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+                    <dt>Cliente</dt>
+                    <dd>@_sale.Customer @(_sale.CustomerNit is null ? "" : $"· NIT {_sale.CustomerNit}")</dd>
+                    <dt>Total · saldo</dt>
+                    <dd>Q @_sale.Total.ToString("N2") · saldo pendiente Q @_sale.Balance.ToString("N2")</dd>
+                </dl>
+            }
+        </div>
+
+        @if (_sale is not null)
+        {
+            <Panel Title="Libros a devolver" Icon="@Icons.Material.Outlined.AssignmentReturn"
+                   Subtitle="Deje la cantidad en 0 para los libros que no se devuelven.">
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <div class="table-scroll">
+                    <MudSimpleTable Dense="true" Elevation="0" Class="tl-table doc-lines">
+                        <thead>
+                            <tr>
+                                <th>Libro</th>
+                                <th class="text-right">Disponible</th>
+                                <th class="doc-lines__qty">Devolver</th>
+                                <th>Motivo</th>
+                                <th>Observación</th>
+                                <th class="text-right">Monto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (LineRow line in _lines)
+                            {
+                                <tr @key="line.Sale.LineId">
+                                    <td class="doc-lines__title">
+                                        <div class="cell-primary">@line.Sale.Title</div>
+                                        <div class="cell-secondary">@line.Sale.BookCode · Q @line.UnitAmount.ToString("N2") c/u</div>
+                                        @if (_submitted && line.Error(_catalogs) is { } error)
+                                        {
+                                            <div class="field-error">@error</div>
+                                        }
+                                    </td>
+                                    <td class="number">@line.Remaining.ToString("N0")</td>
+                                    <td>
+                                        <MudNumericField T="int" @bind-Value="line.Quantity" Min="0" Max="@((int)line.Remaining)" Immediate="true"
+                                                         Disabled="@(_saving || line.Remaining == 0)" Error="@(_submitted && line.Error(_catalogs) is not null)"
+                                                         Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Unidades a devolver de {line.Sale.Title}")" />
+                                    </td>
+                                    <td>
+                                        <MudSelect T="int?" @bind-Value="line.ReasonId" Disabled="@(_saving || line.Quantity == 0)" Placeholder="Motivo"
+                                                   Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Motivo de {line.Sale.Title}")">
+                                            @foreach (ReturnReasonResponse reason in _catalogs.Reasons)
+                                            {
+                                                <MudSelectItem T="int?" Value="reason.Id">@reason.Name @(reason.Restocks ? "" : "(baja)")</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </td>
+                                    <td>
+                                        <MudTextField @bind-Value="line.Notes" MaxLength="500" Disabled="@(_saving || line.Quantity == 0)"
+                                                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain"
+                                                      aria-label="@($"Observación de {line.Sale.Title}")" />
+                                    </td>
+                                    <td class="number">@line.Amount.ToString("N2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+
+                <div class="form-grid mt-3">
+                    <MudSelect T="int?" @bind-Value="_refundMethodId" Label="Reembolso por caja"
+                               HelperText="Se usa solo si el cliente ya había pagado más de su saldo."
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_saving || Refund == 0)">
+                        @foreach (CatalogOptionResponse method in _catalogs.RefundMethods)
+                        {
+                            <MudSelectItem T="int?" Value="method.Id">@method.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudTextField @bind-Value="_refundReference" Label="Referencia del reembolso" MaxLength="150"
+                                  Disabled="@(_saving || Refund == 0)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain" />
+                </div>
+                <MudTextField @bind-Value="_notes" Label="Observaciones" Lines="2" Counter="1000" MaxLength="1000" Disabled="_saving"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain mt-2" />
+
+                <dl class="doc-totals">
+                    <dt>Total a devolver</dt><dd>Q @Total.ToString("N2")</dd>
+                    <dt>Abono al saldo</dt><dd>Q @Credit.ToString("N2")</dd>
+                    <dt class="doc-totals__grand">Reembolso por caja</dt><dd class="doc-totals__grand">Q @Refund.ToString("N2")</dd>
+                </dl>
+
+                <div class="form-actions">
+                    <MudButton Href="@($"/ventas/{_sale.Id}")" Variant="Variant.Text" Disabled="_saving">Cancelar</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                               OnClick="SubmitAsync" Disabled="_saving">
+                        @(_saving ? "Registrando…" : "Registrar devolución")
+                    </MudButton>
+                </div>
+            </Panel>
+        }
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "venta")]
+    public int? SaleFromQuery { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Devoluciones", "/devoluciones"),
+        new("Nueva", null, disabled: true)
+    ];
+
+    private ReturnCatalogsResponse? _catalogs;
+    private SaleResponse? _sale;
+    private List<LineRow> _lines = [];
+    private string? _saleNumber;
+    private string? _saleError;
+    private int? _refundMethodId;
+    private string? _refundReference;
+    private string? _notes;
+    private string? _loadError;
+    private bool _saving;
+    private bool _submitted;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    private decimal Total => _lines.Sum(line => line.Amount);
+
+    private decimal Credit => Math.Min(Total, _sale?.Balance ?? 0);
+
+    private decimal Refund => Total - Credit;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        ApiResult<ReturnCatalogsResponse> catalogs = await ReturnsApi.GetCatalogsAsync();
+
+        if (!catalogs.Succeeded)
+        {
+            _loadError = catalogs.Message;
+            return;
+        }
+
+        _catalogs = catalogs.Data!;
+        _refundMethodId = _catalogs.RefundMethods.FirstOrDefault()?.Id;
+
+        if (SaleFromQuery is int saleId)
+        {
+            await LoadSaleAsync(saleId);
+        }
+    }
+
+    private async Task FindSaleAsync()
+    {
+        string number = _saleNumber?.Trim().ToUpperInvariant() ?? string.Empty;
+        ApiResult<PagedResponse<SaleListItemResponse>> found = await SalesApi.GetPagedAsync(new SaleQuery { Search = number, PageSize = 5 });
+        SaleListItemResponse? sale = found.Data?.Items.FirstOrDefault(item => item.Number == number);
+
+        if (sale is null)
+        {
+            _sale = null;
+            _saleError = found.Succeeded ? $"No se encontró la venta {number}." : found.Message;
+            return;
+        }
+
+        await LoadSaleAsync(sale.Id);
+    }
+
+    private async Task LoadSaleAsync(int saleId)
+    {
+        _saleError = null;
+        _saveResult = null;
+        _submitted = false;
+        ApiResult<SaleResponse> sale = await SalesApi.GetAsync(saleId);
+
+        if (!sale.Succeeded)
+        {
+            _sale = null;
+            _saleError = sale.Message;
+            return;
+        }
+
+        if (!sale.Data!.CanReturn)
+        {
+            _sale = null;
+            _saleError = sale.Data.Annulled
+                ? $"La venta {sale.Data.Number} está anulada."
+                : $"Todas las unidades de la venta {sale.Data.Number} ya se devolvieron.";
+            return;
+        }
+
+        _sale = sale.Data;
+        _saleNumber = _sale.Number;
+        _lines = _sale.Lines.Select(line => new LineRow { Sale = line }).ToList();
+    }
+
+    private async Task SubmitAsync()
+    {
+        _submitted = true;
+        List<LineRow> selected = _lines.Where(line => line.Quantity > 0).ToList();
+
+        if (selected.Count == 0 || _lines.Any(line => line.Error(_catalogs!) is not null))
+        {
+            _showInvalid = true;
+            _saveResult = null;
+            Snackbar.Add(selected.Count == 0 ? "Indique al menos un libro a devolver." : "Revise las líneas marcadas.", Severity.Warning);
+            await JS.InvokeVoidAsync("tikalLibros.scrollToFirstError");
+            return;
+        }
+
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<ReturnResponse> result = await ReturnsApi.CreateAsync(new SaveReturnRequest
+            {
+                SaleId = _sale!.Id,
+                RefundMethodId = Refund > 0 ? _refundMethodId : null,
+                RefundReference = Refund > 0 ? _refundReference : null,
+                Notes = _notes,
+                Lines = selected.Select(line => new ReturnLineRequest
+                {
+                    SaleLineId = line.Sale.LineId,
+                    Quantity = line.Quantity,
+                    ReasonId = line.ReasonId,
+                    Notes = line.Notes
+                }).ToList()
+            });
+
+            if (!result.Succeeded)
+            {
+                _saveResult = result;
+                return;
+            }
+
+            ReturnResponse entry = result.Data!;
+            Snackbar.Add(entry.Refunded > 0
+                ? $"Devolución {entry.Number} registrada; entregue Q {entry.Refunded:N2} al cliente."
+                : $"Devolución {entry.Number} registrada y abonada al saldo de la venta.", Severity.Success);
+            Navigation.NavigateTo($"/devoluciones/{entry.Id}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private sealed class LineRow
+    {
+        public SaleLineResponse Sale { get; init; } = default!;
+
+        public int Quantity { get; set; }
+
+        public int? ReasonId { get; set; }
+
+        public string? Notes { get; set; }
+
+        public decimal Remaining => Sale.Quantity - Sale.ReturnedQuantity;
+
+        public decimal UnitAmount => Sale.Quantity == 0 ? 0 : decimal.Round(Sale.Total / Sale.Quantity, 2);
+
+        public decimal Amount => Sale.Quantity == 0 ? 0 : decimal.Round(Sale.Total * Quantity / Sale.Quantity, 2);
+
+        public string? Error(ReturnCatalogsResponse catalogs)
+        {
+            if (Quantity == 0)
+            {
+                return null;
+            }
+
+            if (Quantity < 0 || Quantity > Remaining)
+            {
+                return $"Puede devolver entre 1 y {Remaining:N0} unidades.";
+            }
+
+            ReturnReasonResponse? reason = catalogs.Reasons.FirstOrDefault(item => item.Id == ReasonId);
+
+            if (reason is null)
+            {
+                return "Seleccione el motivo.";
+            }
+
+            if (Notes?.Contains('<') == true || Notes?.Contains('>') == true)
+            {
+                return "La observación no puede contener los signos < >.";
+            }
+
+            return reason.RequiresNotes && (Notes?.Trim().Length ?? 0) < 5
+                ? $"El motivo \"{reason.Name}\" requiere una observación (mínimo 5 caracteres)."
+                : null;
+        }
+    }
+}

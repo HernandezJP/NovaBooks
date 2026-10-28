@@ -154,6 +154,8 @@ public static class DependencyInjection
 
         services.AddScoped<ISaleService, SaleService>();
 
+        services.AddScoped<IReturnService, ReturnService>();
+
         services.AddScoped<IAuditService, AuditService>();
 
         services.AddScoped<IReportService, ReportService>();
@@ -167,6 +169,8 @@ public static class DependencyInjection
         services.AddScoped<InventoryService>();
 
         services.AddScoped<IInventoryService>(provider => provider.GetRequiredService<InventoryService>());
+
+        services.AddScoped<ITransferService, TransferService>();
 
         services.AddScoped<DemoOperationsSeeder>();
 

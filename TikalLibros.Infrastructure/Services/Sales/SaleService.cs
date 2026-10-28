@@ -279,6 +279,8 @@ public sealed class SaleService : ISaleService
                     .OrderBy(line => line.VDE_NumeroLinea)
                     .Select(line => new SaleLineResponse
                     {
+                        LineId = line.VDE_VentaDetalle,
+                        ReturnedQuantity = line.VDE_CantidadDevuelta,
                         BookId = line.VDE_LibroId,
                         BookCode = line.Libro.LIB_Codigo,
                         Title = line.Libro.LIB_Titulo,
@@ -309,6 +311,17 @@ public sealed class SaleService : ISaleService
                         CashMovementNumber = payment.MovimientoCaja != null ? payment.MovimientoCaja.MCA_Numero : null,
                         Annulled = payment.VPA_Anulado
                     })
+                    .ToList(),
+                Returns = item.Devoluciones
+                    .OrderBy(entry => entry.DEV_DevolucionVenta)
+                    .Select(entry => new SaleReturnSummaryResponse
+                    {
+                        Id = entry.DEV_DevolucionVenta,
+                        Number = entry.DEV_Numero,
+                        Date = entry.DEV_Fecha,
+                        Total = entry.DEV_Total,
+                        Annulled = entry.DEV_Anulada
+                    })
                     .ToList()
             })
             .FirstOrDefaultAsync(cancellationToken);
@@ -336,8 +349,11 @@ public sealed class SaleService : ISaleService
             response.Invoice.Authorization = response.Invoice.Authorization.ToUpperInvariant();
         }
 
+        response.Returned = response.Returns.Where(entry => !entry.Annulled).Sum(entry => entry.Total);
         response.CanPay = !response.Annulled && response.Balance > 0;
-        response.CanAnnul = !response.Annulled;
+        // Con devoluciones vigentes, primero se anulan las devoluciones.
+        response.CanAnnul = !response.Annulled && response.Returned == 0;
+        response.CanReturn = !response.Annulled && response.Lines.Any(line => line.ReturnedQuantity < line.Quantity);
 
         return response;
     }
@@ -631,6 +647,12 @@ public sealed class SaleService : ISaleService
                     if (sale.VEN_Anulada)
                     {
                         return OperationResult<SaleResponse>.Conflict($"La venta {sale.VEN_Numero} ya está anulada.");
+                    }
+
+                    if (await _context.DevolucionesVenta.AnyAsync(entry => entry.DEV_VentaId == sale.VEN_Venta && !entry.DEV_Anulada, token))
+                    {
+                        return OperationResult<SaleResponse>.Conflict(
+                            $"La venta {sale.VEN_Numero} tiene devoluciones registradas. Anule primero las devoluciones.");
                     }
 
                     // Si el cobro ya entró en un cierre de caja, anular descuadraría

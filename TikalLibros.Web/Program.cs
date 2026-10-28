@@ -64,6 +64,7 @@ builder.Services.AddScoped<BookLookup>();
 builder.Services.AddScoped<CashApi>();
 builder.Services.AddScoped<OrdersApi>();
 builder.Services.AddScoped<SalesApi>();
+builder.Services.AddScoped<ReturnsApi>();
 builder.Services.AddScoped<ReportsApi>();
 builder.Services.AddScoped<AuditApi>();
 builder.Services.AddScoped<ParametersApi>();

@@ -18,6 +18,9 @@ public static class SystemParameterKeys
     /// <summary>NIT de la empresa que aparece como emisor en las facturas.</summary>
     public const string InvoiceIssuerNit = "FACTURA_NIT_EMISOR";
 
+    /// <summary>Días desde la venta en que el cliente puede devolver mercadería.</summary>
+    public const string ReturnDays = "VENTAS_DIAS_DEVOLUCION";
+
     public static readonly IReadOnlyList<SystemParameterDefinition> Defaults =
     [
         new(DiscountWithoutApproval, "DECIMAL", "10",
@@ -27,6 +30,8 @@ public static class SystemParameterKeys
         new(ReservationDays, "INTEGER", "3",
             "Días que un pedido reservado aparta la mercadería antes de vencer."),
         new(InvoiceIssuerNit, "STRING", "4567890K",
-            "NIT de la empresa como emisor de las facturas electrónicas.")
+            "NIT de la empresa como emisor de las facturas electrónicas."),
+        new(ReturnDays, "INTEGER", "30",
+            "Días desde la venta en que se aceptan devoluciones del cliente.")
     ];
 }

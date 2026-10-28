@@ -52,6 +52,7 @@ public static class AppPermissions
     public const string InventoryView = "Inventario.Ver";
     public const string InventoryViewCosts = "Inventario.VerCostos";
     public const string InventoryAdjust = "Inventario.Ajustar";
+    public const string InventoryTransfer = "Inventario.Transferir";
     public const string InventoryViewMovements = "Inventario.VerMovimientos";
 
     public const string OrdersView = "Pedidos.Ver";
@@ -68,6 +69,7 @@ public static class AppPermissions
     public const string SalesCancel = "Ventas.Anular";
     public const string SalesApplyDiscount = "Ventas.AplicarDescuento";
     public const string SalesSellOnCredit = "Ventas.VenderCredito";
+    public const string SalesReturn = "Ventas.Devolver";
 
     public const string CashView = "Caja.Ver";
     public const string CashOpen = "Caja.Abrir";

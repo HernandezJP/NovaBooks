@@ -154,6 +154,11 @@ public sealed class SystemParameterService : ISystemParameterService
                     ? "Los días de reserva deben ser un número entero entre 1 y 30."
                     : null;
 
+            case SystemParameterKeys.ReturnDays:
+                return value != decimal.Truncate(value) || value is < 1 or > 365
+                    ? "Los días para devoluciones deben ser un número entero entre 1 y 365."
+                    : null;
+
             case SystemParameterKeys.DiscountWithoutApproval:
                 decimal maximum = await GetDecimalAsync(SystemParameterKeys.MaximumDiscount, cancellationToken);
                 return value is < 0 or > 100
