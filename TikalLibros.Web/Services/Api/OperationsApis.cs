@@ -198,4 +198,25 @@ public sealed class InventoryApi(ApiClient api)
 
     public Task<ApiResult<AdjustmentResponse>> CreateAdjustmentAsync(SaveAdjustmentRequest request) =>
         api.PostAsync<AdjustmentResponse>("api/inventario/ajustes", request);
+
+    public Task<ApiResult<PagedResponse<TransferListItemResponse>>> GetTransfersAsync(TransferQuery query, CancellationToken cancellationToken = default) =>
+        api.GetAsync<PagedResponse<TransferListItemResponse>>(
+            QueryString.Build("api/inventario/traslados",
+                ("search", query.Search?.Trim()),
+                ("warehouseId", query.WarehouseId),
+                ("from", query.From?.ToString("yyyy-MM-dd")),
+                ("to", query.To?.ToString("yyyy-MM-dd")),
+                ("includeAnnulled", query.IncludeAnnulled),
+                ("page", query.Page),
+                ("pageSize", query.PageSize)),
+            cancellationToken);
+
+    public Task<ApiResult<MovementResponse>> GetTransferAsync(int id, CancellationToken cancellationToken = default) =>
+        api.GetAsync<MovementResponse>($"api/inventario/traslados/{id}", cancellationToken);
+
+    public Task<ApiResult<MovementResponse>> CreateTransferAsync(SaveTransferRequest request) =>
+        api.PostAsync<MovementResponse>("api/inventario/traslados", request);
+
+    public Task<ApiResult<MovementResponse>> AnnulTransferAsync(int id, string reason) =>
+        api.PostAsync<MovementResponse>($"api/inventario/traslados/{id}/anular", new AnnulTransferRequest { Reason = reason });
 }

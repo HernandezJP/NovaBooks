@@ -5,12 +5,13 @@ using TikalLibros.Application.Common;
 using TikalLibros.Application.DTOs.Inventory;
 using TikalLibros.Application.Interfaces;
 using TikalLibros.Infrastructure.Security.Permissions;
+using TikalLibros.Infrastructure.Services.Inventory;
 
 namespace TikalLibros.Api.Controllers;
 
 /// <summary>
-/// Existencias, niveles mínimo/máximo, alertas, movimientos (kardex) y
-/// ajustes. Los costos solo se envían con Inventario.VerCostos.
+/// Existencias, niveles mínimo/máximo, alertas, movimientos (kardex),
+/// ajustes y traslados. Los costos solo se envían con Inventario.VerCostos.
 /// </summary>
 [AuditEntity("Inventario")]
 [ApiController]
@@ -18,15 +19,17 @@ namespace TikalLibros.Api.Controllers;
 public sealed class InventoryController : ControllerBase
 {
     private readonly IInventoryService _inventory;
+    private readonly ITransferService _transfers;
 
-    public InventoryController(IInventoryService inventory)
+    public InventoryController(IInventoryService inventory, ITransferService transfers)
     {
         _inventory = inventory;
+        _transfers = transfers;
     }
 
     private bool CanViewCosts => this.HasPermission(InventoryPermissions.ViewCosts);
 
-    [HasAnyPermission(InventoryPermissions.View, InventoryPermissions.Adjust, InventoryPermissions.ViewMovements)]
+    [HasAnyPermission(InventoryPermissions.View, InventoryPermissions.Adjust, InventoryPermissions.ViewMovements, InventoryPermissions.Transfer)]
     [HttpGet("catalogos")]
     [ProducesResponseType(typeof(InventoryCatalogsResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<InventoryCatalogsResponse>> GetCatalogs(CancellationToken cancellationToken)
@@ -155,5 +158,63 @@ public sealed class InventoryController : ControllerBase
         return result.Succeeded
             ? CreatedAtAction(nameof(GetAdjustment), new { id = result.Data!.Id }, result.Data)
             : this.OperationProblem(result);
+    }
+
+    [HasAnyPermission(InventoryPermissions.Transfer, InventoryPermissions.ViewMovements)]
+    [HttpGet("traslados")]
+    [ProducesResponseType(typeof(PagedResponse<TransferListItemResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PagedResponse<TransferListItemResponse>>> GetTransfers(
+        [FromQuery] TransferQuery query,
+        CancellationToken cancellationToken)
+    {
+        return Ok(await _transfers.GetPagedAsync(query, cancellationToken));
+    }
+
+    [HasAnyPermission(InventoryPermissions.Transfer, InventoryPermissions.ViewMovements)]
+    [HttpGet("traslados/{id:int}")]
+    [ProducesResponseType(typeof(MovementResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<MovementResponse>> GetTransfer(int id, CancellationToken cancellationToken)
+    {
+        MovementResponse? movement = await _inventory.GetMovementAsync(id, CanViewCosts, cancellationToken);
+
+        return movement is null || movement.TypeCode != TransferService.TransferType
+            ? this.NotFoundProblem("El traslado solicitado no existe.")
+            : Ok(movement);
+    }
+
+    [HasPermission(InventoryPermissions.Transfer)]
+    [HttpPost("traslados")]
+    [AuditEntity("TrasladoInventario", "CREAR")]
+    [ProducesResponseType(typeof(MovementResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<MovementResponse>> CreateTransfer(
+        [FromBody] SaveTransferRequest request,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<MovementResponse> result =
+            await _transfers.CreateAsync(request, this.GetAuthenticatedUserId(), CanViewCosts, cancellationToken);
+
+        return result.Succeeded
+            ? CreatedAtAction(nameof(GetTransfer), new { id = result.Data!.Id }, result.Data)
+            : this.OperationProblem(result);
+    }
+
+    [HasPermission(InventoryPermissions.Transfer)]
+    [HttpPost("traslados/{id:int}/anular")]
+    [AuditEntity("TrasladoInventario", "ANULAR")]
+    [ProducesResponseType(typeof(MovementResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<MovementResponse>> AnnulTransfer(
+        int id,
+        [FromBody] AnnulTransferRequest request,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<MovementResponse> result =
+            await _transfers.AnnulAsync(id, request, this.GetAuthenticatedUserId(), CanViewCosts, cancellationToken);
+
+        return result.Succeeded ? Ok(result.Data) : this.OperationProblem(result);
     }
 }

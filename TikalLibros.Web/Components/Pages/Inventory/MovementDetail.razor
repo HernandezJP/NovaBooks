@@ -29,8 +29,19 @@ else
             <dl class="detail-list">
                 <dt>Fecha</dt>
                 <dd>@_movement.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
-                <dt>@(_movement.Nature >= 0 ? "Almacén destino" : "Almacén origen")</dt>
-                <dd>@(_movement.TargetWarehouse ?? _movement.SourceWarehouse)</dd>
+                @if (_movement.SourceWarehouse is not null && _movement.TargetWarehouse is not null)
+                {
+                    <dt>Origen → destino</dt>
+                    <dd>
+                        @_movement.SourceWarehouse → @_movement.TargetWarehouse ·
+                        <a href="@($"/inventario/traslados/{_movement.Id}")">ver traslado</a>
+                    </dd>
+                }
+                else
+                {
+                    <dt>@(_movement.Nature >= 0 ? "Almacén destino" : "Almacén origen")</dt>
+                    <dd>@(_movement.TargetWarehouse ?? _movement.SourceWarehouse)</dd>
+                }
                 <dt>Documento</dt>
                 <dd>
                     @(_movement.DocumentReference ?? "—")
