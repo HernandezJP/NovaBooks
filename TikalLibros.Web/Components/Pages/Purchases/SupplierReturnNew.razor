@@ -1,0 +1,257 @@
+@page "/compras/devoluciones/nueva"
+@attribute [RequirePermission(AppPermissions.PurchasesReturn)]
+@using System.ComponentModel.DataAnnotations
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Purchasing
+@using TikalLibros.Application.Validation
+@inject SupplierReturnsApi SupplierReturnsApi
+@inject ReceptionsApi ReceptionsApi
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Nueva devolución a proveedor | Tikal Libros</PageTitle>
+
+<PageHeader Title="Nueva devolución a proveedor" Breadcrumbs="_breadcrumbs"
+            Description="Se devuelve mercadería del lote que creó la recepción, siempre que siga en el almacén y libre de reservas. El valor se calcula al costo de compra." />
+
+<div class="layout-stack">
+    <div class="panel">
+        <div class="list-toolbar">
+            <MudTextField @bind-Value="_receptionNumber" Label="Número de recepción" Placeholder="REC-000012"
+                          MaxLength="30" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-series list-toolbar__search"
+                          OnKeyUp="@(args => args.Key == "Enter" ? FindReceptionAsync() : Task.CompletedTask)" Disabled="_saving" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Search"
+                       OnClick="FindReceptionAsync" Disabled="@(_saving || string.IsNullOrWhiteSpace(_receptionNumber))">
+                Buscar recepción
+            </MudButton>
+        </div>
+        @if (_findError is not null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@_findError</MudAlert>
+        }
+        @if (_reception is not null)
+        {
+            <dl class="detail-list mt-3">
+                <dt>Recepción</dt>
+                <dd><a href="@($"/recepciones/{_reception.ReceptionId}")">@_reception.ReceptionNumber</a> · @_reception.ReceivedAt.ToLocalTime().ToString("dd/MM/yyyy")</dd>
+                <dt>Proveedor</dt>
+                <dd>@_reception.Supplier</dd>
+                <dt>Almacén</dt>
+                <dd>@_reception.Warehouse</dd>
+            </dl>
+        }
+    </div>
+
+    @if (_reception is not null)
+    {
+        <EditForm Model="_header" OnValidSubmit="SubmitAsync" OnInvalidSubmit="OnInvalidSubmitAsync">
+            <DataAnnotationsValidator />
+            <Panel Title="Libros a devolver" Icon="@Icons.Material.Outlined.Outbox" Subtitle="Deje la cantidad en 0 para los libros que no se devuelven.">
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <fieldset disabled="@_saving" class="form-fieldset">
+                    <div class="table-scroll">
+                        <MudSimpleTable Dense="true" Elevation="0" Class="tl-table doc-lines">
+                            <thead>
+                                <tr>
+                                    <th>Libro</th>
+                                    <th class="col-optional">Lote</th>
+                                    <th class="text-right">Aceptadas</th>
+                                    <th class="text-right">Devolvibles</th>
+                                    <th class="doc-lines__qty">Devolver</th>
+                                    <th class="text-right">Costo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (LineRow line in _lines)
+                                {
+                                    <tr @key="line.Line.ReceptionLineId">
+                                        <td class="doc-lines__title">
+                                            <div class="cell-primary">@line.Line.Title</div>
+                                            <div class="cell-secondary">@line.Line.BookCode · Q @line.Line.UnitCost.ToString("N2") c/u</div>
+                                            @if (_submitted && line.Error is { } error)
+                                            {
+                                                <div class="field-error">@error</div>
+                                            }
+                                        </td>
+                                        <td class="col-optional cell-nowrap">@(line.Line.LotNumber ?? "—")</td>
+                                        <td class="number">@line.Line.Accepted.ToString("N0")</td>
+                                        <td class="number">@line.Line.Returnable.ToString("N0")</td>
+                                        <td>
+                                            <MudNumericField T="int" @bind-Value="line.Quantity" Min="0" Max="@((int)line.Line.Returnable)" Immediate="true"
+                                                             Disabled="@(line.Line.Returnable == 0)" Error="@(_submitted && line.Error is not null)"
+                                                             Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Unidades a devolver de {line.Line.Title}")" />
+                                        </td>
+                                        <td class="number">@line.Total.ToString("N2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+
+                    <MudTextField @bind-Value="_header.Reason" For="@(() => _header.Reason)" Label="Motivo *"
+                                  HelperText="Por ejemplo: ejemplares dañados en el transporte, edición equivocada."
+                                  Lines="2" Counter="500" MaxLength="500" Class="mt-3 tl-filter-plain"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </fieldset>
+
+                <dl class="doc-totals">
+                    <dt class="doc-totals__grand">Valor a acreditar por el proveedor</dt>
+                    <dd class="doc-totals__grand">Q @_lines.Sum(line => line.Total).ToString("N2")</dd>
+                </dl>
+
+                <div class="form-actions">
+                    <MudButton Href="@($"/recepciones/{_reception.ReceptionId}")" Variant="Variant.Text" Disabled="_saving">Cancelar</MudButton>
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Save" Disabled="_saving">
+                        @(_saving ? "Registrando…" : "Registrar devolución")
+                    </MudButton>
+                </div>
+            </Panel>
+        </EditForm>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "recepcion")]
+    public int? ReceptionFromQuery { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Devoluciones a proveedor", "/compras/devoluciones"),
+        new("Nueva", null, disabled: true)
+    ];
+
+    private readonly HeaderModel _header = new();
+    private ReturnableReceptionResponse? _reception;
+    private List<LineRow> _lines = [];
+    private string? _receptionNumber;
+    private string? _findError;
+    private bool _saving;
+    private bool _submitted;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ReceptionFromQuery is int receptionId)
+        {
+            await LoadReceptionAsync(receptionId);
+        }
+    }
+
+    private async Task FindReceptionAsync()
+    {
+        string number = _receptionNumber?.Trim().ToUpperInvariant() ?? string.Empty;
+        ApiResult<PagedResponse<ReceptionListItemResponse>> found = await ReceptionsApi.GetPagedAsync(new ReceptionQuery { Search = number, PageSize = 5 });
+        ReceptionListItemResponse? reception = found.Data?.Items.FirstOrDefault(item => item.Number == number);
+
+        if (reception is null)
+        {
+            _reception = null;
+            _findError = found.Succeeded ? $"No se encontró la recepción {number}." : found.Message;
+            return;
+        }
+
+        await LoadReceptionAsync(reception.Id);
+    }
+
+    private async Task LoadReceptionAsync(int receptionId)
+    {
+        _findError = null;
+        _saveResult = null;
+        _submitted = false;
+        ApiResult<ReturnableReceptionResponse> result = await SupplierReturnsApi.GetReturnableAsync(receptionId);
+
+        if (!result.Succeeded)
+        {
+            _reception = null;
+            _findError = result.Message;
+            return;
+        }
+
+        _reception = result.Data!;
+        _receptionNumber = _reception.ReceptionNumber;
+        _lines = _reception.Lines.Select(line => new LineRow { Line = line }).ToList();
+
+        if (_lines.All(line => line.Line.Returnable == 0))
+        {
+            _findError = "Ya no quedan unidades de esta recepción en el almacén para devolver.";
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _submitted = true;
+        List<LineRow> selected = _lines.Where(line => line.Quantity > 0).ToList();
+
+        if (selected.Count == 0 || _lines.Any(line => line.Error is not null))
+        {
+            Snackbar.Add(selected.Count == 0 ? "Indique al menos un libro a devolver." : "Revise las cantidades marcadas.", Severity.Warning);
+            await OnInvalidSubmitAsync();
+            return;
+        }
+
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<SupplierReturnResponse> result = await SupplierReturnsApi.CreateAsync(new SaveSupplierReturnRequest
+            {
+                ReceptionId = _reception!.ReceptionId,
+                Reason = _header.Reason,
+                Lines = selected.Select(line => new SupplierReturnLineRequest { ReceptionLineId = line.Line.ReceptionLineId, Quantity = line.Quantity }).ToList()
+            });
+
+            if (!result.Succeeded)
+            {
+                _saveResult = result;
+                return;
+            }
+
+            Snackbar.Add($"Devolución {result.Data!.Number} registrada por Q {result.Data.Total:N2}; las existencias se actualizaron.", Severity.Success);
+            Navigation.NavigateTo($"/compras/devoluciones/{result.Data.Id}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task OnInvalidSubmitAsync()
+    {
+        _submitted = true;
+        _showInvalid = true;
+        _saveResult = null;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("tikalLibros.scrollToFirstError");
+    }
+
+    private sealed class HeaderModel
+    {
+        [Required(ErrorMessage = "Indique el motivo de la devolución.")]
+        [StringLength(500, MinimumLength = 5, ErrorMessage = "El motivo debe tener entre 5 y 500 caracteres.")]
+        [PlainText]
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    private sealed class LineRow
+    {
+        public ReturnableLineResponse Line { get; init; } = default!;
+
+        public int Quantity { get; set; }
+
+        public decimal Total => decimal.Round(Quantity * Line.UnitCost, 2);
+
+        public string? Error =>
+            Quantity < 0 || Quantity > Line.Returnable ? $"Puede devolver entre 0 y {Line.Returnable:N0} unidades." : null;
+    }
+}

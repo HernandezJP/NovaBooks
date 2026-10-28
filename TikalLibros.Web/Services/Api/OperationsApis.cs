@@ -139,6 +139,34 @@ public sealed class ReceptionsApi(ApiClient api)
         api.PostAsync<ReceptionResponse>($"api/recepciones/{id}/anular", new AnnulReceptionRequest { Reason = reason });
 }
 
+public sealed class SupplierReturnsApi(ApiClient api)
+{
+    public Task<ApiResult<PagedResponse<SupplierReturnListItemResponse>>> GetPagedAsync(
+        SupplierReturnQuery query, CancellationToken cancellationToken = default) =>
+        api.GetAsync<PagedResponse<SupplierReturnListItemResponse>>(
+            QueryString.Build("api/devoluciones-proveedor",
+                ("search", query.Search?.Trim()),
+                ("supplierId", query.SupplierId),
+                ("from", query.From?.ToString("yyyy-MM-dd")),
+                ("to", query.To?.ToString("yyyy-MM-dd")),
+                ("includeAnnulled", query.IncludeAnnulled),
+                ("page", query.Page),
+                ("pageSize", query.PageSize)),
+            cancellationToken);
+
+    public Task<ApiResult<SupplierReturnResponse>> GetAsync(int id, CancellationToken cancellationToken = default) =>
+        api.GetAsync<SupplierReturnResponse>($"api/devoluciones-proveedor/{id}", cancellationToken);
+
+    public Task<ApiResult<ReturnableReceptionResponse>> GetReturnableAsync(int receptionId, CancellationToken cancellationToken = default) =>
+        api.GetAsync<ReturnableReceptionResponse>($"api/devoluciones-proveedor/recepciones/{receptionId}", cancellationToken);
+
+    public Task<ApiResult<SupplierReturnResponse>> CreateAsync(SaveSupplierReturnRequest request) =>
+        api.PostAsync<SupplierReturnResponse>("api/devoluciones-proveedor", request);
+
+    public Task<ApiResult<SupplierReturnResponse>> AnnulAsync(int id, string reason) =>
+        api.PostAsync<SupplierReturnResponse>($"api/devoluciones-proveedor/{id}/anular", new AnnulSupplierReturnRequest { Reason = reason });
+}
+
 public sealed class InventoryApi(ApiClient api)
 {
     public Task<ApiResult<InventoryCatalogsResponse>> GetCatalogsAsync(CancellationToken cancellationToken = default) =>

@@ -335,6 +335,7 @@ public static class IdentitySeeder
             PurchasingPermissions.View,
             PurchasingPermissions.Approve,
             PurchasingPermissions.Receive,
+            PurchasingPermissions.Return,
 
             InventoryPermissions.View,
             InventoryPermissions.ViewCosts,
@@ -428,6 +429,7 @@ public static class IdentitySeeder
             PurchasingPermissions.Approve,
             PurchasingPermissions.Receive,
             PurchasingPermissions.Cancel,
+            PurchasingPermissions.Return,
 
             InventoryPermissions.View,
             InventoryPermissions.ViewCosts,

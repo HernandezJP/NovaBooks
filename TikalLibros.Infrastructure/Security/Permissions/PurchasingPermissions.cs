@@ -12,6 +12,7 @@ namespace TikalLibros.Infrastructure.Security.Permissions
         public const string Approve = "Compras.Aprobar";
         public const string Receive = "Compras.Recibir";
         public const string Cancel = "Compras.Cancelar";
+        public const string Return = "Compras.Devolver";
 
         public static readonly string[] All =
         [
@@ -20,7 +21,8 @@ namespace TikalLibros.Infrastructure.Security.Permissions
             Update,
             Approve,
             Receive,
-            Cancel
+            Cancel,
+            Return
         ];
     }
 }

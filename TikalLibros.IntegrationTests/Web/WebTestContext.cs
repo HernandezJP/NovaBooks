@@ -28,6 +28,8 @@ public abstract class WebTestContext : BunitContext
         // cuando la API simulada ya existe (por eso Api! no es nulo ahí).
         Services.AddSingleton(_ => new SalesApi(Api!));
         Services.AddSingleton(_ => new ReturnsApi(Api!));
+        Services.AddSingleton(_ => new SupplierReturnsApi(Api!));
+        Services.AddSingleton(_ => new ReceptionsApi(Api!));
         Services.AddSingleton(_ => new OrdersApi(Api!));
         Services.AddSingleton(_ => new CashApi(Api!));
         Services.AddSingleton(_ => new ReportsApi(Api!));

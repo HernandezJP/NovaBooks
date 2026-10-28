@@ -156,6 +156,8 @@ public static class DependencyInjection
 
         services.AddScoped<IReturnService, ReturnService>();
 
+        services.AddScoped<ISupplierReturnService, SupplierReturnService>();
+
         services.AddScoped<IAuditService, AuditService>();
 
         services.AddScoped<IReportService, ReportService>();

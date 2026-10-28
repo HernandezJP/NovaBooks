@@ -52,6 +52,13 @@ else
 
             <div class="form-actions">
                 <MudButton Href="/recepciones" Variant="Variant.Text">Volver</MudButton>
+                @if (_reception.StatusCode == ReceptionStatus.Processed && Session.HasPermission(AppPermissions.PurchasesReturn))
+                {
+                    <MudButton Href="@($"/compras/devoluciones/nueva?recepcion={_reception.Id}")" Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Outlined.Outbox">
+                        Devolver al proveedor
+                    </MudButton>
+                }
                 @if (_reception.CanAnnul && Session.HasPermission(AppPermissions.PurchasesReceive) && Session.HasPermission(AppPermissions.PurchasesCancel))
                 {
                     <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Undo"
