@@ -56,7 +56,18 @@ public sealed class SalesReportResponse
 
     public decimal AverageTicket { get; set; }
 
-    /// <summary>Lo cobrado de esas ventas (pagos no anulados).</summary>
+    /// <summary>Devoluciones de clientes registradas en el período (no anuladas).</summary>
+    public int ReturnsCount { get; set; }
+
+    public decimal Returned { get; set; }
+
+    /// <summary>Total vendido menos devoluciones del período.</summary>
+    public decimal NetTotal { get; set; }
+
+    /// <summary>
+    /// Lo cobrado de esas ventas (pagos no anulados), sin contar lo que las
+    /// devoluciones abonaron a su saldo.
+    /// </summary>
     public decimal Collected { get; set; }
 
     /// <summary>Saldo pendiente de esas ventas (crédito).</summary>

@@ -1,0 +1,145 @@
+@page "/reportes/rentabilidad"
+@attribute [RequirePermission(AppPermissions.ReportsProfitability)]
+@using TikalLibros.Application.DTOs.Reports
+@using TikalLibros.Web.Services.Reports
+@inject ReportsApi ReportsApi
+@inject IJSRuntime JS
+
+<PageTitle>Rentabilidad | Tikal Libros</PageTitle>
+
+<PageHeader Title="Rentabilidad"
+            Description="Ingreso sin IVA, costo de salida (PEPS) y margen de lo vendido en el período, descontando devoluciones."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
+                   Disabled="_report is null" OnClick="ExportAsync">
+            Exportar CSV
+        </MudButton>
+    </Actions>
+</PageHeader>
+
+<div class="panel">
+    <div class="list-toolbar">
+        <div class="list-toolbar__range">
+            <MudDateRangePicker DateRange="_range" DateRangeChanged="RangeChangedAsync" Label="Período"
+                                MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+        <span class="form-hint">Máximo 366 días.</span>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible generar el reporte" Message="@_error" OnRetry="LoadAsync" /></div>
+}
+else if (_report is null)
+{
+    <div class="panel"><LoadingState Rows="6" /></div>
+}
+else
+{
+    <div class="stat-grid">
+        <StatCard Tint="sky" Icon="@Icons.Material.Outlined.Payments" Label="Ingreso neto" Value="@Money(_report.Revenue)"
+                  Caption="@($"{_report.Units:N0} unidades · {_report.ReturnedUnits:N0} devueltas")" />
+        <StatCard Tint="sand" Icon="@Icons.Material.Outlined.Inventory2" Label="Costo de lo vendido" Value="@Money(_report.Cost)" />
+        <StatCard Tint="mint" Icon="@Icons.Material.Outlined.TrendingUp" Label="Margen bruto" Value="@Money(_report.Margin)"
+                  Caption="@(_report.MarginPercent is { } percent ? $"{percent:0.##} % del ingreso" : null)" />
+    </div>
+
+    <div class="layout-split">
+        <Panel Title="Por categoría" Icon="@Icons.Material.Outlined.Category">@ProfitTable(_report.ByCategory, false)</Panel>
+        <Panel Title="Por vendedor" Icon="@Icons.Material.Outlined.Badge">@ProfitTable(_report.ByEmployee, false)</Panel>
+    </div>
+
+    <Panel Title="Libros con mayor margen" Icon="@Icons.Material.Outlined.MenuBook" Subtitle="Los 50 primeros.">
+        @ProfitTable(_report.ByBook, true)
+    </Panel>
+}
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Reportes", null, disabled: true),
+        new("Rentabilidad", null, disabled: true)
+    ];
+
+    private DateRange _range = new(DateTime.Today.AddDays(-29), DateTime.Today);
+    private ProfitabilityReportResponse? _report;
+    private string? _error;
+
+    private static string Money(decimal value) => $"Q {value:N2}";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task RangeChangedAsync(DateRange? range)
+    {
+        _range = range ?? new DateRange(DateTime.Today.AddDays(-29), DateTime.Today);
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        ApiResult<ProfitabilityReportResponse> result = await ReportsApi.GetProfitabilityAsync(new ReportPeriodQuery
+        {
+            From = _range.Start is { } start ? DateOnly.FromDateTime(start) : null,
+            To = _range.End is { } end ? DateOnly.FromDateTime(end) : null
+        });
+
+        _report = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+
+    private async Task ExportAsync()
+    {
+        string csv = CsvExport.Build(
+            ["Código", "Libro", "Unidades", "Ingreso neto", "Costo", "Margen", "Margen %"],
+            _report!.ByBook.Select(row => new object?[] { row.Code, row.Name, row.Units, row.Revenue, row.Cost, row.Margin, row.MarginPercent }));
+
+        await CsvExport.DownloadAsync(JS, $"rentabilidad-{_report.From:yyyyMMdd}-{_report.To:yyyyMMdd}.csv", csv);
+    }
+
+    private static RenderFragment ProfitTable(IReadOnlyCollection<ProfitRow> rows, bool withCode) => __builder =>
+    {
+        if (rows.Count == 0)
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.TrendingUp" Title="Sin ventas" Message="No hay ventas en el período." />
+            return;
+        }
+
+        <div class="table-scroll">
+            <MudSimpleTable Dense="true" Elevation="0" Class="tl-table">
+                <thead>
+                    <tr>
+                        <th>@(withCode ? "Libro" : "Nombre")</th>
+                        <th class="text-right">Unidades</th>
+                        <th class="text-right">Ingreso</th>
+                        <th class="text-right col-optional">Costo</th>
+                        <th class="text-right">Margen</th>
+                        <th class="text-right">%</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (ProfitRow row in rows)
+                    {
+                        <tr>
+                            <td>
+                                <div class="cell-primary">@row.Name</div>
+                                @if (withCode)
+                                {
+                                    <div class="cell-secondary">@row.Code</div>
+                                }
+                            </td>
+                            <td class="number">@row.Units.ToString("N0")</td>
+                            <td class="number">@row.Revenue.ToString("N2")</td>
+                            <td class="number col-optional">@row.Cost.ToString("N2")</td>
+                            <td class="@($"number {(row.Margin < 0 ? "qty-out" : string.Empty)}")">@row.Margin.ToString("N2")</td>
+                            <td class="number">@(row.MarginPercent?.ToString("0.#") ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </div>
+    };
+}

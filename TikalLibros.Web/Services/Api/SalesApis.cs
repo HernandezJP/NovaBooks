@@ -196,6 +196,22 @@ public sealed class ReportsApi(ApiClient api)
 
     public Task<ApiResult<PendingOrdersResponse>> GetPendingOrdersAsync(CancellationToken cancellationToken = default) =>
         api.GetAsync<PendingOrdersResponse>("api/reportes/pedidos-pendientes", cancellationToken);
+
+    public Task<ApiResult<PurchasesReportResponse>> GetPurchasesAsync(ReportPeriodQuery query, CancellationToken cancellationToken = default) =>
+        api.GetAsync<PurchasesReportResponse>(QueryString.Build("api/reportes/compras", Period(query)), cancellationToken);
+
+    public Task<ApiResult<CashReportResponse>> GetCashAsync(ReportPeriodQuery query, CancellationToken cancellationToken = default) =>
+        api.GetAsync<CashReportResponse>(QueryString.Build("api/reportes/caja", Period(query)), cancellationToken);
+
+    public Task<ApiResult<ProfitabilityReportResponse>> GetProfitabilityAsync(ReportPeriodQuery query, CancellationToken cancellationToken = default) =>
+        api.GetAsync<ProfitabilityReportResponse>(QueryString.Build("api/reportes/rentabilidad", Period(query)), cancellationToken);
+
+    public Task<ApiResult<ReceivablesResponse>> GetReceivablesAsync(ReceivablesQuery query, CancellationToken cancellationToken = default) =>
+        api.GetAsync<ReceivablesResponse>(
+            QueryString.Build("api/reportes/cuentas-por-cobrar",
+                ("customerId", query.CustomerId),
+                ("onlyOverdue", query.OnlyOverdue ? true : null)),
+            cancellationToken);
 }
 
 public sealed class AuditApi(ApiClient api)

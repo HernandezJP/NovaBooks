@@ -14,11 +14,12 @@ using TikalLibros.Infrastructure.Services.Sales;
 namespace TikalLibros.Infrastructure.Services.Reports;
 
 /// <summary>
-/// Reportes iniciales: ventas por período, libros más vendidos, inventario
-/// valorizado y pedidos pendientes. Las fechas se agrupan en hora de
-/// Guatemala; las ventas anuladas no suman.
+/// Reportes: ventas por período, libros más vendidos, inventario valorizado,
+/// pedidos pendientes, compras, caja, rentabilidad y cuentas por cobrar. Las
+/// fechas se agrupan en hora de Guatemala; las ventas anuladas no suman y las
+/// devoluciones de clientes se descuentan.
 /// </summary>
-public sealed class ReportService : IReportService
+public sealed partial class ReportService : IReportService
 {
     private static readonly string[] PendingStates = [OrderStatus.PendingApproval, OrderStatus.Reserved, OrderStatus.Draft];
 
@@ -105,6 +106,24 @@ public sealed class ReportService : IReportService
         var valid = rows.Where(row => !row.VEN_Anulada).ToList();
         decimal total = valid.Sum(row => row.VEN_Total);
 
+        DateTime start = BusinessTime.StartOfDayUtc(from);
+        DateTime end = BusinessTime.EndOfDayUtcExclusive(to);
+
+        var returns = await _context.DevolucionesVenta
+            .AsNoTracking()
+            .Where(entry => !entry.DEV_Anulada && entry.DEV_Fecha >= start && entry.DEV_Fecha < end &&
+                            (query.WarehouseId == null || entry.DEV_AlmacenId == query.WarehouseId))
+            .GroupBy(_ => 1)
+            .Select(group => new { Count = group.Count(), Total = group.Sum(entry => entry.DEV_Total) })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // Lo que una devolución abonó al saldo cuenta como pagado en la venta, pero no es cobro.
+        decimal creditNotes = await _context.DevolucionesPagos
+            .AsNoTracking()
+            .Where(refund => !refund.DPA_Anulado && refund.MetodoPago.MPA_Codigo == PaymentMethodCode.Credit &&
+                             sales.Any(sale => sale.VEN_Venta == refund.DevolucionVenta.DEV_VentaId && !sale.VEN_Anulada))
+            .SumAsync(refund => (decimal?)refund.DPA_MontoBase, cancellationToken) ?? 0;
+
         Dictionary<DateOnly, (int Count, decimal Total)> byDay = valid
             .GroupBy(row => BusinessTime.ToLocalDate(row.VEN_Fecha))
             .ToDictionary(group => group.Key, group => (group.Count(), group.Sum(row => row.VEN_Total)));
@@ -121,7 +140,10 @@ public sealed class ReportService : IReportService
             Tax = valid.Sum(row => row.VEN_Impuesto),
             Total = total,
             AverageTicket = valid.Count == 0 ? 0 : LineAmounts.Round(total / valid.Count),
-            Collected = valid.Sum(row => row.VEN_TotalPagado),
+            ReturnsCount = returns?.Count ?? 0,
+            Returned = returns?.Total ?? 0,
+            NetTotal = total - (returns?.Total ?? 0),
+            Collected = valid.Sum(row => row.VEN_TotalPagado) - creditNotes,
             Pending = valid.Sum(row => row.VEN_Total - row.VEN_TotalPagado),
             // Todos los días del período, aunque no haya ventas, para graficar.
             ByDay = Enumerable.Range(0, to.DayNumber - from.DayNumber + 1)
@@ -182,13 +204,24 @@ public sealed class ReportService : IReportService
             {
                 BookId = group.Key,
                 Sales = group.Select(line => line.VDE_VentaId).Distinct().Count(),
-                Units = group.Sum(line => line.VDE_Cantidad),
-                Discount = group.Sum(line => line.VDE_MontoDescuento),
-                Revenue = group.Sum(line => line.VDE_Total),
-                Tax = group.Sum(line => line.VDE_MontoImpuesto),
-                Cost = group.Sum(line => line.VDE_Cantidad * line.VDE_CostoUnitario)
+                // Netos de devoluciones: lo devuelto deja de contar como vendido.
+                Units = group.Sum(line => line.VDE_Cantidad - line.VDE_CantidadDevuelta),
+                Discount = group.Sum(line => line.VDE_MontoDescuento * (line.VDE_Cantidad - line.VDE_CantidadDevuelta) / line.VDE_Cantidad),
+                Revenue = group.Sum(line => line.VDE_Total * (line.VDE_Cantidad - line.VDE_CantidadDevuelta) / line.VDE_Cantidad),
+                Tax = group.Sum(line => line.VDE_MontoImpuesto * (line.VDE_Cantidad - line.VDE_CantidadDevuelta) / line.VDE_Cantidad),
+                Cost = group.Sum(line => (line.VDE_Cantidad - line.VDE_CantidadDevuelta) * line.VDE_CostoUnitario)
             })
             .ToListAsync(cancellationToken);
+
+        grouped = grouped
+            .Where(item => item.Units > 0)
+            .Select(item => item with
+            {
+                Discount = LineAmounts.Round(item.Discount),
+                Revenue = LineAmounts.Round(item.Revenue),
+                Tax = LineAmounts.Round(item.Tax)
+            })
+            .ToList();
 
         var ordered = (byRevenue
                 ? grouped.OrderByDescending(item => item.Revenue).ThenByDescending(item => item.Units)

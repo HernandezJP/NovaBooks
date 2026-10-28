@@ -8,7 +8,7 @@
 <PageTitle>Ventas por período | Tikal Libros</PageTitle>
 
 <PageHeader Title="Ventas por período"
-            Description="Totales del período sin ventas anuladas: por día, vendedor, método de pago y condición."
+            Description="Totales del período sin ventas anuladas: por día, vendedor, método de pago y condición. La venta neta descuenta las devoluciones."
             Breadcrumbs="_breadcrumbs">
     <Actions>
         <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
@@ -47,6 +47,8 @@ else
                   Caption="@($"Descuentos {Money(_report.Discount)}")" />
         <StatCard Tint="peach" Icon="@Icons.Material.Outlined.HourglassBottom" Label="Pendiente de cobro" Value="@Money(_report.Pending)"
                   Caption="@($"Cobrado {Money(_report.Collected)}")" />
+        <StatCard Tint="sky" Icon="@Icons.Material.Outlined.AssignmentReturn" Label="Venta neta" Value="@Money(_report.NetTotal)"
+                  Caption="@($"{_report.ReturnsCount} devolución(es) por {Money(_report.Returned)}")" />
     </div>
 
     <Panel Title="Ventas por día" Icon="@Icons.Material.Outlined.BarChart"

@@ -48,6 +48,7 @@ public static class AppPermissions
     public const string PurchasesApprove = "Compras.Aprobar";
     public const string PurchasesReceive = "Compras.Recibir";
     public const string PurchasesCancel = "Compras.Cancelar";
+    public const string PurchasesReturn = "Compras.Devolver";
 
     public const string InventoryView = "Inventario.Ver";
     public const string InventoryViewCosts = "Inventario.VerCostos";
@@ -80,6 +81,8 @@ public static class AppPermissions
 
     public const string ReportsSales = "Reportes.Ventas";
     public const string ReportsInventory = "Reportes.Inventario";
+    public const string ReportsPurchases = "Reportes.Compras";
+    public const string ReportsCash = "Reportes.Caja";
     public const string ReportsProfitability = "Reportes.Rentabilidad";
     public const string ReportsAudit = "Reportes.Auditoria";
 }

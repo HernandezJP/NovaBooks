@@ -1,0 +1,32 @@
+@* Lista de barras horizontales proporcionales (reportes): nombre, barra y monto. *@
+@using TikalLibros.Application.DTOs.Reports
+
+@if (Rows.Count == 0)
+{
+    <EmptyState Icon="@Icons.Material.Outlined.BarChart" Title="Sin datos" Message="@EmptyMessage" />
+}
+else
+{
+    decimal max = Rows.Max(row => Math.Abs(row.Total));
+
+    <ul class="bar-list">
+        @foreach (SalesByGroupRow row in Rows)
+        {
+            <li class="bar-list__row">
+                <span class="bar-list__label" title="@row.Name">@row.Name</span>
+                <span class="bar-list__track">
+                    <span class="bar-list__fill" style="@($"display:block;width: {(max == 0 ? 0 : Math.Abs(row.Total) / max * 100):0.#}%")"></span>
+                </span>
+                <span class="bar-list__value">Q @row.Total.ToString("N2") · @row.Count</span>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyCollection<SalesByGroupRow> Rows { get; set; } = [];
+
+    [Parameter]
+    public string EmptyMessage { get; set; } = "No hay datos en el período.";
+}
