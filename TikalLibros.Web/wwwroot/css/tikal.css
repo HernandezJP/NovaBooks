@@ -2308,3 +2308,16 @@ body,
         margin-top: 0 !important;
     }
 }
+
+/* Subcategorías: sangría bajo su categoría principal. */
+.category-child {
+    padding-left: 1.25rem;
+    position: relative;
+}
+
+.category-child::before {
+    content: "\21B3";
+    position: absolute;
+    left: 0.25rem;
+    color: var(--mud-palette-text-secondary);
+}

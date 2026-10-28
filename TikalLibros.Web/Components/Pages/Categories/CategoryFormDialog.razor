@@ -1,0 +1,107 @@
+@using TikalLibros.Application.DTOs.Categories
+@inject CategoriesApi CategoriesApi
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmit" id="category-form">
+            <DataAnnotationsValidator />
+            <ServerValidator Result="_saveResult" />
+            <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+            <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+            <div class="form-grid">
+                <MudTextField @bind-Value="_model.Name" For="@(() => _model.Name)" Label="Nombre *"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150" Class="tl-filter-business" />
+                <MudTextField T="string" Value="@(Category?.Code ?? "Se asignará al guardar")" Label="Código"
+                              HelperText="Lo asigna el sistema a partir del nombre."
+                              ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                <MudSelect T="int?" @bind-Value="_model.ParentId" Label="Categoría padre" Clearable="true"
+                           HelperText="Déjela vacía para una categoría principal."
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="_parents is null">
+                    @foreach (CategoryResponse parent in _parents ?? [])
+                    {
+                        <MudSelectItem T="int?" Value="parent.Id">@(parent.Parent is null ? parent.Name : $"{parent.Parent} › {parent.Name}")</MudSelectItem>
+                    }
+                </MudSelect>
+            </div>
+            <MudTextField @bind-Value="_model.Description" For="@(() => _model.Description)" Label="Descripción"
+                          Lines="3" MaxLength="500" Counter="500" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain mt-2" />
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" form="category-form" Disabled="_saving">
+            @if (_saving)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Guardar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Categoría a editar; null para crear.</summary>
+    [Parameter]
+    public CategoryResponse? Category { get; set; }
+
+    private SaveCategoryRequest _model = new();
+    private List<CategoryResponse>? _parents;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Category is not null)
+        {
+            _model = new SaveCategoryRequest { Name = Category.Name, Description = Category.Description, ParentId = Category.ParentId };
+        }
+
+        ApiResult<List<CategoryResponse>> parents = await CategoriesApi.GetAllAsync(null, StatusFilter.Active);
+
+        // La propia categoría no puede ser su padre (la API también rechaza los ciclos).
+        _parents = parents.Data?.Where(item => item.Id != Category?.Id && item.ParentId != Category?.Id).ToList() ?? [];
+        _saveResult = parents.Succeeded ? null : parents;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<CategoryResponse> result = Category is null
+                ? await CategoriesApi.CreateAsync(_model)
+                : await CategoriesApi.UpdateAsync(Category.Id, _model);
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OnInvalidSubmit()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+    }
+}

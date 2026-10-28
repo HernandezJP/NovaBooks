@@ -73,6 +73,11 @@ public sealed class MenuState : IDisposable
             "report-orders" => Icons.Material.Outlined.PendingActions,
             "audit" => Icons.Material.Outlined.ManageSearch,
             "parameters" => Icons.Material.Outlined.SettingsSuggest,
+            "categories" => Icons.Material.Outlined.Category,
+            "price-lists" => Icons.Material.Outlined.Sell,
+            "branches" => Icons.Material.Outlined.Store,
+            "warehouses" => Icons.Material.Outlined.Warehouse,
+            "cash-registers" => Icons.Material.Outlined.PointOfSale,
 
             _ => Icons.Material.Outlined.Circle
         };

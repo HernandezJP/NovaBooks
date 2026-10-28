@@ -1,0 +1,206 @@
+@page "/categorias"
+@attribute [RequirePermission(AppPermissions.CatalogView)]
+@implements IDisposable
+@using TikalLibros.Application.DTOs.Categories
+@inject CategoriesApi CategoriesApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Categorías | Tikal Libros</PageTitle>
+
+<PageHeader Title="Categorías" Description="Clasificación de los libros del catálogo en categorías y subcategorías." />
+
+<Panel Title="Categorías" Subtitle="Las subcategorías aparecen debajo de su categoría principal." Icon="@Icons.Material.Outlined.Category">
+    <Actions>
+        @if (Session.HasPermission(AppPermissions.CatalogCreate))
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">
+                Nueva categoría
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+        <div class="list-toolbar">
+            <MudTextField @bind-Value="_search" Placeholder="Buscar categorías"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          DebounceInterval="400" OnDebounceIntervalElapsed="_ => LoadAsync()"
+                          OnClearButtonClick="ClearSearchAsync" MaxLength="100"
+                          aria-label="Buscar categorías" Class="tl-filter-plain list-toolbar__search" />
+            <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                <MudSelectItem Value="StatusFilter.Active">Activas</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.Inactive">Inactivas</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.All">Todas</MudSelectItem>
+            </MudSelect>
+        </div>
+
+        @if (_loading && _items is null)
+        {
+            <LoadingState />
+        }
+        else if (_error is not null)
+        {
+            <ErrorState Title="No fue posible cargar las categorías" Message="@_error" OnRetry="LoadAsync" />
+        }
+        else if (_items is { Count: 0 })
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.Category" Title="No se encontraron categorías"
+                        Message="@(string.IsNullOrWhiteSpace(_search) ? "Registre la primera categoría con el botón Nueva categoría." : "Pruebe con otro término de búsqueda.")" />
+        }
+        else if (_items is not null)
+        {
+            <div class="table-scroll">
+                <MudTable Items="_items" Hover="true" Dense="true" Elevation="0" Loading="_loading" Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>Nombre</MudTh>
+                        <MudTh>Categoría padre</MudTh>
+                        <MudTh Class="col-optional">Descripción</MudTh>
+                        <MudTh Class="text-right">Subcategorías</MudTh>
+                        <MudTh Class="text-right">Libros</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh Class="tl-table__actions">Acciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="@(context.ParentId is null ? "cell-primary" : "cell-primary category-child")">@context.Name</div>
+                            <div class="cell-secondary">@context.Code</div>
+                        </MudTd>
+                        <MudTd>@(context.Parent ?? "—")</MudTd>
+                        <MudTd Class="col-optional">@(context.Description ?? "—")</MudTd>
+                        <MudTd Class="text-right">@context.SubcategoriesCount</MudTd>
+                        <MudTd Class="text-right">@context.BooksCount</MudTd>
+                        <MudTd><StatusChip IsActive="context.IsActive" ActiveText="Activa" InactiveText="Inactiva" /></MudTd>
+                        <MudTd Class="tl-table__actions">
+                            @if (Session.HasAnyPermission(AppPermissions.CatalogUpdate, AppPermissions.CatalogDisable))
+                            {
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                         aria-label="@($"Acciones para {context.Name}")">
+                                    @if (Session.HasPermission(AppPermissions.CatalogUpdate))
+                                    {
+                                        <MudMenuItem Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(context)">Editar</MudMenuItem>
+                                    }
+                                    @if (Session.HasPermission(AppPermissions.CatalogDisable))
+                                    {
+                                        <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                     OnClick="() => ToggleStatusAsync(context)">
+                                            @(context.IsActive ? "Desactivar" : "Reactivar")
+                                        </MudMenuItem>
+                                    }
+                                </MudMenu>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        }
+    </ChildContent>
+</Panel>
+
+@code {
+    private List<CategoryResponse>? _items;
+    private string? _search;
+    private StatusFilter _status = StatusFilter.Active;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<List<CategoryResponse>> result = await CategoriesApi.GetAllAsync(_search, _status, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _items = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+        _loading = false;
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        return LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        CategoryResponse? category = await Dialogs.ShowFormAsync<CategoryFormDialog, CategoryResponse>(
+            "Nueva categoría", new DialogParameters<CategoryFormDialog>(), DialogExtensions.WideFormOptions);
+
+        if (category is not null)
+        {
+            Snackbar.Add($"Categoría {category.Name} registrada.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditAsync(CategoryResponse category)
+    {
+        CategoryResponse? updated = await Dialogs.ShowFormAsync<CategoryFormDialog, CategoryResponse>(
+            "Editar categoría",
+            new DialogParameters<CategoryFormDialog> { { dialog => dialog.Category, category } },
+            DialogExtensions.WideFormOptions);
+
+        if (updated is not null)
+        {
+            Snackbar.Add($"Categoría {updated.Name} actualizada.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task ToggleStatusAsync(CategoryResponse category)
+    {
+        bool activate = !category.IsActive;
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Reactivar categoría" : "Desactivar categoría",
+            activate
+                ? $"¿Desea reactivar la categoría {category.Name}?"
+                : $"¿Desea desactivar la categoría {category.Name}? Los libros que ya la tienen la conservan, pero no podrá asignarse a libros nuevos.",
+            activate ? "Reactivar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<CategoryResponse> result = await CategoriesApi.ChangeStatusAsync(category.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Categoría {category.Name} {(activate ? "reactivada" : "desactivada")}.", Severity.Success);
+            await LoadAsync();
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

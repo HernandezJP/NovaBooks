@@ -1,0 +1,165 @@
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Organization
+@inject BranchesApi BranchesApi
+
+<MudDialog>
+    <DialogContent>
+        @if (_catalogs is null)
+        {
+            <LoadingState Rows="4" />
+            <FormErrors Result="_saveResult" />
+        }
+        else
+        {
+            <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmit" id="branch-form">
+                <DataAnnotationsValidator />
+                <ServerValidator Result="_saveResult" />
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+                <div class="form-grid">
+                    <MudTextField @bind-Value="_model.Name" For="@(() => _model.Name)" Label="Nombre *"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150" Class="tl-filter-business" />
+                    <MudTextField T="string" Value="@(Branch?.Code ?? "Se asignará al guardar")" Label="Código"
+                                  HelperText="Lo asigna el sistema automáticamente."
+                                  ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudTextField @bind-Value="_model.Phone" For="@(() => _model.Phone)" Label="Teléfono"
+                                  InputType="InputType.Telephone" MaxLength="25" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-phone" />
+                    <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)" Label="Correo electrónico"
+                                  InputType="InputType.Email" MaxLength="256" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-email" />
+                </div>
+
+                <div class="form-section__title mt-3">Dirección</div>
+                <div class="form-grid">
+                    <MudSelect T="int?" Value="_departmentId" ValueChanged="DepartmentChanged" Label="Departamento *"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (DepartmentOptionResponse department in _catalogs.Departments)
+                        {
+                            <MudSelectItem T="int?" Value="department.Id">@department.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSelect T="int?" @bind-Value="_model.MunicipalityId" For="@(() => _model.MunicipalityId)" Label="Municipio *"
+                               Disabled="_departmentId is null" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (CatalogOptionResponse municipality in Municipalities)
+                        {
+                            <MudSelectItem T="int?" Value="municipality.Id">@municipality.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudTextField @bind-Value="_model.AddressLine" For="@(() => _model.AddressLine)" Label="Dirección *"
+                                  Placeholder="Calle o avenida, número" MaxLength="250" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain" />
+                    <MudTextField @bind-Value="_model.Zone" For="@(() => _model.Zone)" Label="Zona"
+                                  InputMode="InputMode.numeric" MaxLength="2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-digits" />
+                </div>
+                <MudTextField @bind-Value="_model.AddressReference" For="@(() => _model.AddressReference)" Label="Referencia"
+                              MaxLength="500" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain mt-2" />
+
+                <MudSwitch T="bool" @bind-Value="_model.IsMain" Color="Color.Primary" Disabled="@(Branch?.IsMain == true)"
+                           Label="Sucursal principal" Class="mt-2" />
+                <p class="form-hint">
+                    @(Branch?.IsMain == true
+                        ? "Es la sucursal principal. Para cambiarla, marque otra sucursal como principal."
+                        : "Si la marca, la sucursal principal anterior deja de serlo.")
+                </p>
+            </EditForm>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" form="branch-form"
+                   Disabled="@(_saving || _catalogs is null)">
+            @if (_saving)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Guardar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Sucursal a editar; null para crear.</summary>
+    [Parameter]
+    public BranchResponse? Branch { get; set; }
+
+    private SaveBranchRequest _model = new();
+    private OrganizationCatalogsResponse? _catalogs;
+    private int? _departmentId;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    private IEnumerable<CatalogOptionResponse> Municipalities =>
+        _catalogs?.Departments.FirstOrDefault(department => department.Id == _departmentId)?.Municipalities ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Branch is not null)
+        {
+            _departmentId = Branch.DepartmentId;
+            _model = new SaveBranchRequest
+            {
+                Name = Branch.Name,
+                Phone = Branch.Phone,
+                Email = Branch.Email,
+                MunicipalityId = Branch.MunicipalityId,
+                Zone = Branch.Zone,
+                AddressLine = Branch.AddressLine,
+                AddressReference = Branch.AddressReference,
+                IsMain = Branch.IsMain
+            };
+        }
+
+        ApiResult<OrganizationCatalogsResponse> catalogs = await BranchesApi.GetCatalogsAsync();
+        _catalogs = catalogs.Data;
+        _saveResult = catalogs.Succeeded ? null : catalogs;
+    }
+
+    private void DepartmentChanged(int? departmentId)
+    {
+        _departmentId = departmentId;
+
+        // Al cambiar de departamento se elige de nuevo el municipio (la cabecera si existe).
+        DepartmentOptionResponse? department = _catalogs?.Departments.FirstOrDefault(item => item.Id == departmentId);
+        _model.MunicipalityId = department?.Municipalities.FirstOrDefault(item => item.Name == department.Name)?.Id;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<BranchResponse> result = Branch is null
+                ? await BranchesApi.CreateAsync(_model)
+                : await BranchesApi.UpdateAsync(Branch.Id, _model);
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OnInvalidSubmit()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+    }
+}

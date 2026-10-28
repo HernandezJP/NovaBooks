@@ -14,6 +14,7 @@ public static partial class PermissionLabels
         ["Auditoria"] = "Auditoría",
         ["Configuracion"] = "Configuración",
         ["Parametros"] = "Parámetros del sistema",
+        ["Organizacion"] = "Sucursales, almacenes y cajas",
         ["RestablecerPassword"] = "Restablecer contraseña",
         ["VenderCredito"] = "Vender al crédito",
         ["AdministrarPrecios"] = "Administrar precios"

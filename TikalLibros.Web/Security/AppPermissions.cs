@@ -61,6 +61,7 @@ public static class AppPermissions
     public const string OrdersCancel = "Pedidos.Cancelar";
 
     public const string ConfigurationParameters = "Configuracion.Parametros";
+    public const string ConfigurationOrganization = "Configuracion.Organizacion";
 
     public const string SalesView = "Ventas.Ver";
     public const string SalesCreate = "Ventas.Crear";

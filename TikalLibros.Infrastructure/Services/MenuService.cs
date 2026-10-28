@@ -32,6 +32,10 @@ public sealed class MenuService : IMenuService
             Item("autores", "Autores", "/autores", "authors",
                 CatalogPermissions.View),
             Item("editoriales", "Editoriales", "/editoriales", "publishers",
+                CatalogPermissions.View),
+            Item("categorias", "Categorías", "/categorias", "categories",
+                CatalogPermissions.View),
+            Item("listas-precio", "Listas de precio", "/listas-precio", "price-lists",
                 CatalogPermissions.View)),
 
         Group("personas", "Personas",
@@ -77,6 +81,12 @@ public sealed class MenuService : IMenuService
                 RolePermissions.View),
             Item("permisos", "Permisos", "/permisos", "permissions",
                 RolePermissions.AssignPermissions),
+            Item("sucursales", "Sucursales", "/configuracion/sucursales", "branches",
+                ConfigurationPermissions.ManageOrganization),
+            Item("almacenes", "Almacenes", "/configuracion/almacenes", "warehouses",
+                ConfigurationPermissions.ManageOrganization),
+            Item("cajas", "Cajas", "/configuracion/cajas", "cash-registers",
+                ConfigurationPermissions.ManageOrganization),
             Item("parametros", "Parámetros", "/configuracion/parametros", "parameters",
                 ConfigurationPermissions.ManageParameters))
     ];

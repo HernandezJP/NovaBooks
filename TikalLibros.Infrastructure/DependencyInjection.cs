@@ -18,6 +18,7 @@ using TikalLibros.Infrastructure.Services.Cash;
 using TikalLibros.Infrastructure.Services.Sales;
 using TikalLibros.Infrastructure.Services.Reports;
 using TikalLibros.Infrastructure.Services.Configuration;
+using TikalLibros.Infrastructure.Services.Organization;
 using TikalLibros.Infrastructure.Data.Seed;
 
 
@@ -179,6 +180,16 @@ public static class DependencyInjection
         services.AddScoped<IAuthorService, AuthorService>();
 
         services.AddScoped<IEditorialService, EditorialService>();
+
+        services.AddScoped<ICategoryService, CategoryService>();
+
+        services.AddScoped<IPriceListService, PriceListService>();
+
+        services.AddScoped<IBranchService, BranchService>();
+
+        services.AddScoped<IWarehouseService, WarehouseService>();
+
+        services.AddScoped<ICashRegisterService, CashRegisterService>();
 
         services.AddScoped<IProductImageService, ProductImageService>();
 

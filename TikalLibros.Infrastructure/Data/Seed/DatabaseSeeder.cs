@@ -92,6 +92,9 @@ public static class DatabaseSeeder
 
             await context.SaveChangesAsync(cancellationToken);
         }
+
+        // Resto de departamentos y municipios (direcciones de sucursales).
+        await GeographySeeder.SeedAsync(context, guatemala.PAI_Pais, cancellationToken);
     }
 
     private static async Task SeedPeopleCatalogsAsync(

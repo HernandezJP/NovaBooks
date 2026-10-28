@@ -1,0 +1,212 @@
+@page "/configuracion/sucursales"
+@attribute [RequirePermission(AppPermissions.ConfigurationOrganization)]
+@implements IDisposable
+@using TikalLibros.Application.DTOs.Organization
+@inject BranchesApi BranchesApi
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Sucursales | Tikal Libros</PageTitle>
+
+<PageHeader Title="Sucursales" Description="Tiendas de la empresa. La principal se propone primero en compras e informes." />
+
+<Panel Title="Sucursales" Subtitle="Busque por nombre, código, municipio o departamento." Icon="@Icons.Material.Outlined.Store">
+    <Actions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">
+            Nueva sucursal
+        </MudButton>
+    </Actions>
+    <ChildContent>
+        <div class="list-toolbar">
+            <MudTextField @bind-Value="_search" Placeholder="Buscar sucursales"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          DebounceInterval="400" OnDebounceIntervalElapsed="_ => LoadAsync()"
+                          OnClearButtonClick="ClearSearchAsync" MaxLength="100"
+                          aria-label="Buscar sucursales" Class="tl-filter-plain list-toolbar__search" />
+            <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                <MudSelectItem Value="StatusFilter.Active">Activas</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.Inactive">Inactivas</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.All">Todas</MudSelectItem>
+            </MudSelect>
+        </div>
+
+        @if (_loading && _items is null)
+        {
+            <LoadingState />
+        }
+        else if (_error is not null)
+        {
+            <ErrorState Title="No fue posible cargar las sucursales" Message="@_error" OnRetry="LoadAsync" />
+        }
+        else if (_items is { Count: 0 })
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.Store" Title="No se encontraron sucursales" Message="Pruebe con otro término de búsqueda o estado." />
+        }
+        else if (_items is not null)
+        {
+            <div class="table-scroll">
+                <MudTable Items="_items" Hover="true" Dense="true" Elevation="0" Loading="_loading" Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>Sucursal</MudTh>
+                        <MudTh>Dirección</MudTh>
+                        <MudTh Class="col-optional">Contacto</MudTh>
+                        <MudTh Class="text-right">Almacenes</MudTh>
+                        <MudTh Class="text-right">Cajas</MudTh>
+                        <MudTh Class="text-right">Empleados</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh Class="tl-table__actions">Acciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary">
+                                @context.Name
+                                @if (context.IsMain)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined" Class="ml-1">Principal</MudChip>
+                                }
+                            </div>
+                            <div class="cell-secondary">@context.Code</div>
+                        </MudTd>
+                        <MudTd>
+                            <div>@context.AddressLine@(context.Zone is null ? "" : $", zona {context.Zone}")</div>
+                            <div class="cell-secondary">@context.Municipality, @context.Department</div>
+                        </MudTd>
+                        <MudTd Class="col-optional">
+                            <div>@(context.Phone ?? "—")</div>
+                            @if (context.Email is not null)
+                            {
+                                <div class="cell-secondary">@context.Email</div>
+                            }
+                        </MudTd>
+                        <MudTd Class="text-right">@context.WarehousesCount</MudTd>
+                        <MudTd Class="text-right">@context.CashRegistersCount</MudTd>
+                        <MudTd Class="text-right">@context.EmployeesCount</MudTd>
+                        <MudTd><StatusChip IsActive="context.IsActive" ActiveText="Activa" InactiveText="Inactiva" /></MudTd>
+                        <MudTd Class="tl-table__actions">
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                     aria-label="@($"Acciones para {context.Name}")">
+                                <MudMenuItem Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(context)">Editar</MudMenuItem>
+                                @if (!context.IsMain)
+                                {
+                                    <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                 OnClick="() => ToggleStatusAsync(context)">
+                                        @(context.IsActive ? "Desactivar" : "Reactivar")
+                                    </MudMenuItem>
+                                }
+                            </MudMenu>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        }
+    </ChildContent>
+</Panel>
+
+@code {
+    private List<BranchResponse>? _items;
+    private string? _search;
+    private StatusFilter _status = StatusFilter.Active;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<List<BranchResponse>> result = await BranchesApi.GetAllAsync(_search, _status, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _items = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+        _loading = false;
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        return LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        BranchResponse? branch = await Dialogs.ShowFormAsync<BranchFormDialog, BranchResponse>(
+            "Nueva sucursal", new DialogParameters<BranchFormDialog>(), DialogExtensions.WideFormOptions);
+
+        if (branch is not null)
+        {
+            Snackbar.Add($"Sucursal {branch.Name} registrada.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditAsync(BranchResponse branch)
+    {
+        BranchResponse? updated = await Dialogs.ShowFormAsync<BranchFormDialog, BranchResponse>(
+            "Editar sucursal",
+            new DialogParameters<BranchFormDialog> { { dialog => dialog.Branch, branch } },
+            DialogExtensions.WideFormOptions);
+
+        if (updated is not null)
+        {
+            Snackbar.Add($"Sucursal {updated.Name} actualizada.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task ToggleStatusAsync(BranchResponse branch)
+    {
+        bool activate = !branch.IsActive;
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Reactivar sucursal" : "Desactivar sucursal",
+            activate
+                ? $"¿Desea reactivar la sucursal {branch.Name}?"
+                : $"¿Desea desactivar la sucursal {branch.Name}? Antes debe desactivar o trasladar sus almacenes, cajas y empleados.",
+            activate ? "Reactivar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<BranchResponse> result = await BranchesApi.ChangeStatusAsync(branch.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Sucursal {branch.Name} {(activate ? "reactivada" : "desactivada")}.", Severity.Success);
+            await LoadAsync();
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

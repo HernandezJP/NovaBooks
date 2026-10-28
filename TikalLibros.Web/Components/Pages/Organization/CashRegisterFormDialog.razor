@@ -1,0 +1,122 @@
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Organization
+@inject BranchesApi BranchesApi
+@inject CashRegistersApi CashRegistersApi
+
+<MudDialog>
+    <DialogContent>
+        @if (_branches is null)
+        {
+            <LoadingState Rows="3" />
+            <FormErrors Result="_saveResult" />
+        }
+        else
+        {
+            <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmit" id="cash-register-form">
+                <DataAnnotationsValidator />
+                <ServerValidator Result="_saveResult" />
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+                <div class="form-grid">
+                    <MudTextField @bind-Value="_model.Name" For="@(() => _model.Name)" Label="Nombre *"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150" Class="tl-filter-business" />
+                    <MudTextField T="string" Value="@(CashRegister?.Code ?? "Se asignará al guardar")" Label="Código"
+                                  HelperText="Lo asigna el sistema automáticamente."
+                                  ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudSelect T="int?" @bind-Value="_model.BranchId" For="@(() => _model.BranchId)" Label="Sucursal *"
+                               Disabled="@(CashRegister?.IsOpen == true)"
+                               HelperText="@(CashRegister?.IsOpen == true ? "La caja está abierta; ciérrela para cambiarla de sucursal." : null)"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (CatalogOptionResponse branch in _branches)
+                        {
+                            <MudSelectItem T="int?" Value="branch.Id">@branch.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+                <MudTextField @bind-Value="_model.Description" For="@(() => _model.Description)" Label="Descripción"
+                              Lines="2" MaxLength="500" Counter="500" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain mt-2" />
+            </EditForm>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" form="cash-register-form"
+                   Disabled="@(_saving || _branches is null)">
+            @if (_saving)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Guardar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Caja a editar; null para crear.</summary>
+    [Parameter]
+    public CashRegisterAdminResponse? CashRegister { get; set; }
+
+    private SaveCashRegisterRequest _model = new();
+    private IReadOnlyList<CatalogOptionResponse>? _branches;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (CashRegister is not null)
+        {
+            _model = new SaveCashRegisterRequest { BranchId = CashRegister.BranchId, Name = CashRegister.Name, Description = CashRegister.Description };
+        }
+
+        ApiResult<OrganizationCatalogsResponse> catalogs = await BranchesApi.GetCatalogsAsync();
+        _branches = catalogs.Data?.Branches;
+        _saveResult = catalogs.Succeeded ? null : catalogs;
+
+        if (CashRegister is null && _branches is { Count: > 0 })
+        {
+            _model.BranchId = _branches[0].Id;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<CashRegisterAdminResponse> result = CashRegister is null
+                ? await CashRegistersApi.CreateAsync(_model)
+                : await CashRegistersApi.UpdateAsync(CashRegister.Id, _model);
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OnInvalidSubmit()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+    }
+}
