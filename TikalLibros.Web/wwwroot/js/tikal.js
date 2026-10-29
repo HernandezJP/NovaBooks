@@ -95,6 +95,20 @@
             setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
         },
 
+        // Descarga un archivo binario (por ejemplo, Excel) enviado como DotNetStreamReference.
+        downloadStream: async function (fileName, streamReference, mimeType) {
+            var buffer = await streamReference.arrayBuffer();
+            var blob = new Blob([buffer], { type: mimeType || "application/octet-stream" });
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement("a");
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        },
+
         // Lleva la vista al primer campo con error y le da el foco.
         scrollToFirstError: function () {
             requestAnimationFrame(function () {

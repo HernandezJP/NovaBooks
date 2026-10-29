@@ -3,7 +3,6 @@
 @using TikalLibros.Application.DTOs.Reports
 @using TikalLibros.Web.Services.Reports
 @inject ReportsApi ReportsApi
-@inject IJSRuntime JS
 
 <PageTitle>Ventas por período | Tikal Libros</PageTitle>
 
@@ -11,10 +10,7 @@
             Description="Totales del período sin ventas anuladas: por día, vendedor, método de pago y condición. La venta neta descuenta las devoluciones."
             Breadcrumbs="_breadcrumbs">
     <Actions>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
-                   Disabled="_report is null" OnClick="ExportAsync">
-            Exportar CSV
-        </MudButton>
+        <ExportActions Build="BuildExportAsync" Disabled="_report is null" />
     </Actions>
 </PageHeader>
 
@@ -53,20 +49,18 @@ else
 
     <Panel Title="Ventas por día" Icon="@Icons.Material.Outlined.BarChart"
            Subtitle="@($"Del {_report.From:dd/MM/yyyy} al {_report.To:dd/MM/yyyy}")">
-        @{ decimal max = _report.ByDay.Select(day => day.Total).DefaultIfEmpty(0).Max(); }
-        <div class="day-chart" role="img" aria-label="Total vendido por día">
-            @foreach (SalesByDayRow day in _report.ByDay)
-            {
-                <div class="day-chart__bar" tabindex="0" title="@($"{day.Date:dd/MM/yyyy}: {Money(day.Total)} en {day.Count} venta(s)")"
-                     style="@($"height: {(max == 0 ? 0 : day.Total / max * 100):0.#}%")"></div>
-            }
-        </div>
-        <div class="day-chart__axis"><span>@_report.From.ToString("dd/MM")</span><span>@_report.To.ToString("dd/MM")</span></div>
+        <TlChart Type="@(_report.ByDay.Count > 62 ? ChartType.Line : ChartType.Bar)" AriaLabel="Total vendido por día"
+                 Labels="@_report.ByDay.Select(day => day.Date.ToString("dd/MM")).ToList()"
+                 Series="@([new TlChart.ChartLine("Ventas", _report.ByDay.Select(day => day.Total).ToList())])" />
     </Panel>
 
     <div class="layout-split">
         <Panel Title="Por vendedor" Icon="@Icons.Material.Outlined.Badge">@Bars(_report.ByEmployee)</Panel>
-        <Panel Title="Cobros por método de pago" Icon="@Icons.Material.Outlined.CreditCard">@Bars(_report.ByPaymentMethod)</Panel>
+        <Panel Title="Cobros por método de pago" Icon="@Icons.Material.Outlined.DonutLarge">
+            <TlChart Type="ChartType.Donut" AriaLabel="Cobros por método de pago" EmptyMessage="No hay cobros en el período."
+                     Labels="@_report.ByPaymentMethod.Select(row => row.Name).ToList()"
+                     Series="@([new TlChart.ChartLine("Cobros", _report.ByPaymentMethod.Select(row => row.Total).ToList())])" />
+        </Panel>
     </div>
 
     <Panel Title="Por condición de pago" Icon="@Icons.Material.Outlined.Handshake">@Bars(_report.BySaleType)</Panel>
@@ -107,14 +101,10 @@ else
         _error = result.Succeeded ? null : result.Message;
     }
 
-    private async Task ExportAsync()
-    {
-        string csv = CsvExport.Build(
-            ["Fecha", "Ventas", "Total"],
-            _report!.ByDay.Select(day => new object?[] { day.Date, day.Count, day.Total }));
-
-        await CsvExport.DownloadAsync(JS, $"ventas-{_report.From:yyyyMMdd}-{_report.To:yyyyMMdd}.csv", csv);
-    }
+    private Task<ExportTable?> BuildExportAsync() => Task.FromResult<ExportTable?>(new ExportTable(
+        $"ventas-{_report!.From:yyyyMMdd}-{_report.To:yyyyMMdd}", "Ventas por período", $"Del {_report.From:dd/MM/yyyy} al {_report.To:dd/MM/yyyy}",
+        [new("Fecha", ExportKind.Date), new("Ventas", ExportKind.Number), new("Total", ExportKind.Money)],
+        _report.ByDay.Select(day => new object?[] { day.Date, day.Count, day.Total }).ToList()));
 
     private static RenderFragment Bars(IReadOnlyCollection<SalesByGroupRow> rows) => __builder =>
     {

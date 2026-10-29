@@ -4,6 +4,7 @@
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Common
 @using TikalLibros.Application.DTOs.Inventory
+@using TikalLibros.Web.Services.Reports
 @inject InventoryApi InventoryApi
 @inject NavigationManager Navigation
 
@@ -13,6 +14,7 @@
             Description="Entradas por compra, salidas y ajustes. Los movimientos anulados se conservan tachados."
             Breadcrumbs="_breadcrumbs">
     <Actions>
+        <ExportActions Build="BuildExportAsync" />
         <MudButton Href="/inventario/kardex" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.ReceiptLong">
             Kardex por libro
         </MudButton>
@@ -203,5 +205,30 @@
     {
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        List<MovementListItemResponse> movements = await PagedExport.AllAsync((page, size) => InventoryApi.GetMovementsAsync(
+            new MovementQuery
+            {
+                Search = _search,
+                Type = _type,
+                From = _range?.Start is { } start ? DateOnly.FromDateTime(start) : null,
+                To = _range?.End is { } end ? DateOnly.FromDateTime(end) : null,
+                Page = page,
+                PageSize = size
+            }));
+
+        return new ExportTable($"movimientos-{DateTime.Today:yyyyMMdd}", "Movimientos de inventario", "Según los filtros de la pantalla",
+            [
+                new("Movimiento"), new("Fecha", ExportKind.DateTime), new("Tipo"), new("Almacén"), new("Documento"),
+                new("Empleado"), new("Unidades", ExportKind.Number), new("Anulado")
+            ],
+            movements.Select(item => new object?[]
+            {
+                item.Number, item.Date, item.Type, item.Warehouse, item.DocumentReference, item.Employee,
+                item.Nature < 0 ? -item.Units : item.Units, item.Annulled
+            }).ToList());
     }
 }

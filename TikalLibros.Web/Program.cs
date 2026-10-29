@@ -42,6 +42,7 @@ builder.Services.AddHttpClient<ApiClient>((services, client) =>
 builder.Services.AddScoped<SessionState>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<MenuState>();
+builder.Services.AddScoped<AlertState>();
 builder.Services.AddScoped<MenuApi>();
 builder.Services.AddScoped<UsersApi>();
 builder.Services.AddScoped<RolesApi>();
@@ -67,6 +68,8 @@ builder.Services.AddScoped<SalesApi>();
 builder.Services.AddScoped<ReturnsApi>();
 builder.Services.AddScoped<SupplierReturnsApi>();
 builder.Services.AddScoped<ReportsApi>();
+builder.Services.AddScoped<DashboardApi>();
+builder.Services.AddScoped<AlertsApi>();
 builder.Services.AddScoped<AuditApi>();
 builder.Services.AddScoped<ParametersApi>();
 

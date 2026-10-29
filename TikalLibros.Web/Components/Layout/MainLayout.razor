@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject SessionState Session
 @inject MenuState Menu
+@inject AlertState Alerts
 @inject AuthService Auth
 @inject NavigationManager Navigation
 @inject IDialogService Dialogs
@@ -34,40 +35,28 @@
                 </form>
             }
 
+            @if (Session.IsAuthenticated)
+            {
+                <MudTooltip Text="@(Alerts.Total == 0 ? "Sin alertas" : $"{Alerts.Total} alerta(s)")">
+                    <MudBadge Content="@(Alerts.Total > 99 ? "99+" : Alerts.Total.ToString())" Visible="@(Alerts.Total > 0)" Overlap="true"
+                              Color="@((Alerts.Current?.Critical ?? 0) > 0 ? Color.Error : Color.Warning)" Class="app-bar__alerts">
+                        <MudIconButton Icon="@(Alerts.Total > 0 ? Icons.Material.Filled.Notifications : Icons.Material.Outlined.Notifications)"
+                                       Color="Color.Inherit" OnClick="ToggleAlerts"
+                                       aria-label="@($"Centro de alertas: {Alerts.Total} alerta(s)")" aria-expanded="@_alertsOpen.ToString().ToLowerInvariant()" />
+                    </MudBadge>
+                </MudTooltip>
+            }
+
             @if (Session.User is { } user)
             {
-                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
-                         aria-label="Menú de perfil" Class="user-menu">
-                    <ActivatorContent>
-                        <div class="user-menu__activator">
-                            <MudAvatar Size="Size.Small" Class="user-menu__avatar">@Initials(user.UserName)</MudAvatar>
-                            <div class="user-menu__text">
-                                <span class="user-menu__name">@user.UserName</span>
-                                <span class="user-menu__role">@PrimaryRole(user.Roles)</span>
-                            </div>
-                            <MudIcon Icon="@Icons.Material.Filled.ExpandMore" Size="Size.Small" Class="user-menu__chevron" />
-                        </div>
-                    </ActivatorContent>
-                    <ChildContent>
-                        <div class="user-menu__header">
-                            <MudAvatar Class="user-menu__avatar user-menu__avatar--large">@Initials(user.UserName)</MudAvatar>
-                            <div>
-                                <div class="user-menu__name">@user.UserName</div>
-                                <div class="user-menu__email">@user.Email</div>
-                                <div class="user-menu__roles">
-                                    @foreach (string role in user.Roles)
-                                    {
-                                        <span class="role-pill">@role</span>
-                                    }
-                                </div>
-                            </div>
-                        </div>
-                        <MudDivider />
-                        <MudMenuItem Icon="@Icons.Material.Outlined.Logout" OnClick="LogoutAsync" Class="user-menu__logout">
-                            Cerrar sesión
-                        </MudMenuItem>
-                    </ChildContent>
-                </MudMenu>
+                @* Solo identifica al usuario; cerrar sesión está en la barra lateral. *@
+                <div class="user-menu user-menu__activator" title="@($"{user.Email} · {string.Join(", ", user.Roles)} · {user.Permissions.Count} permisos")">
+                    <MudAvatar Size="Size.Small" Class="user-menu__avatar">@Initials(user.UserName)</MudAvatar>
+                    <div class="user-menu__text">
+                        <span class="user-menu__name">@user.UserName</span>
+                        <span class="user-menu__role">@PrimaryRole(user.Roles)</span>
+                    </div>
+                </div>
             }
         </MudAppBar>
 
@@ -106,8 +95,21 @@
             </div>
         </MudDrawer>
 
+        <MudDrawer @bind-Open="_alertsOpen" Anchor="Anchor.End" Variant="DrawerVariant.Temporary" Elevation="2" Width="360px"
+                   Class="alert-drawer" aria-label="Centro de alertas">
+            @if (_alertsOpen)
+            {
+                <AlertList OnClose="() => _alertsOpen = false" />
+            }
+        </MudDrawer>
+
         <MudMainContent>
             <div class="page-content">
+                @* Solo al imprimir: identifica el documento y la fecha. *@
+                <div class="print-header" aria-hidden="true">
+                    <span>Tikal Libros</span>
+                    <span>Impreso el @DateTime.Now.ToString("dd/MM/yyyy HH:mm") por @Session.User?.UserName</span>
+                </div>
                 @Body
             </div>
         </MudMainContent>
@@ -125,7 +127,12 @@
     private bool _isDesktop = true;
     private bool _collapsed;
     private bool _mobileOpen;
+    private bool _alertsOpen;
     private string? _search;
+    private Timer? _alertsTimer;
+
+    /// <summary>Cada cuánto se actualiza la campana aunque no haya navegación.</summary>
+    private static readonly TimeSpan AlertsRefresh = TimeSpan.FromMinutes(3);
 
     private RenderFragment LogoutButton => __builder =>
     {
@@ -141,25 +148,46 @@
     {
         Session.Changed += OnStateChanged;
         Menu.Changed += OnStateChanged;
+        Alerts.Changed += OnStateChanged;
         Navigation.LocationChanged += OnLocationChanged;
 
         if (Session.IsAuthenticated)
         {
             await Menu.EnsureLoadedAsync();
+            await Alerts.RefreshAsync();
         }
+
+        _alertsTimer = new Timer(_ => _ = InvokeAsync(() => Alerts.RefreshAsync(force: true)), null, AlertsRefresh, AlertsRefresh);
     }
 
     public void Dispose()
     {
         Session.Changed -= OnStateChanged;
         Menu.Changed -= OnStateChanged;
+        Alerts.Changed -= OnStateChanged;
         Navigation.LocationChanged -= OnLocationChanged;
+        _alertsTimer?.Dispose();
     }
 
     private void OnStateChanged() => _ = InvokeAsync(StateHasChanged);
 
+    // Al navegar se refrescan las alertas (como máximo una vez por minuto).
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            await Alerts.RefreshAsync();
+        });
+
+    private async Task ToggleAlerts()
+    {
+        _alertsOpen = !_alertsOpen;
+
+        if (_alertsOpen)
+        {
+            await Alerts.RefreshAsync(force: true);
+        }
+    }
 
     private void OnBreakpointChanged(Breakpoint breakpoint)
     {

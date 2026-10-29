@@ -4,7 +4,6 @@
 @using TikalLibros.Application.DTOs.Reports
 @using TikalLibros.Web.Services.Reports
 @inject ReportsApi ReportsApi
-@inject IJSRuntime JS
 
 <PageTitle>Inventario valorizado | Tikal Libros</PageTitle>
 
@@ -12,10 +11,7 @@
             Description="Existencia por libro y almacén valorizada al costo promedio de sus lotes vigentes."
             Breadcrumbs="_breadcrumbs">
     <Actions>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
-                   Disabled="@(_report is not { Rows.Count: > 0 })" OnClick="ExportAsync">
-            Exportar CSV
-        </MudButton>
+        <ExportActions Build="BuildExportAsync" Disabled="@(_report is not { Rows.Count: > 0 })" />
     </Actions>
 </PageHeader>
 
@@ -130,15 +126,15 @@ else
         _error = result.Succeeded ? null : result.Message;
     }
 
-    private async Task ExportAsync()
-    {
-        string csv = CsvExport.Build(
-            ["Código", "Título", "Almacén", "Disponible", "Reservado", "Libre", "Mínimo", "Costo promedio", "Valor", "Estado"],
-            _report!.Rows.Select(row => new object?[]
-            {
-                row.BookCode, row.Title, row.Warehouse, row.Available, row.Reserved, row.Free, row.Minimum, row.AverageCost, row.Value, row.StatusLabel
-            }));
-
-        await CsvExport.DownloadAsync(JS, $"inventario-valorizado-{DateTime.Today:yyyyMMdd}.csv", csv);
-    }
+    private Task<ExportTable?> BuildExportAsync() => Task.FromResult<ExportTable?>(new ExportTable(
+        $"inventario-valorizado-{DateTime.Today:yyyyMMdd}", "Inventario valorizado", $"Existencias al {DateTime.Now:dd/MM/yyyy HH:mm}",
+        [
+            new("Código"), new("Título"), new("Almacén"), new("Disponible", ExportKind.Number), new("Reservado", ExportKind.Number),
+            new("Libre", ExportKind.Number), new("Mínimo", ExportKind.Number), new("Costo promedio", ExportKind.Money),
+            new("Valor", ExportKind.Money), new("Estado")
+        ],
+        _report!.Rows.Select(row => new object?[]
+        {
+            row.BookCode, row.Title, row.Warehouse, row.Available, row.Reserved, row.Free, row.Minimum, row.AverageCost, row.Value, row.StatusLabel
+        }).ToList()));
 }

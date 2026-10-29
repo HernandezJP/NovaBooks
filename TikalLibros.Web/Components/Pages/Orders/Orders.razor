@@ -4,6 +4,7 @@
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Common
 @using TikalLibros.Application.DTOs.Sales
+@using TikalLibros.Web.Services.Reports
 @inject OrdersApi OrdersApi
 @inject SessionState Session
 @inject NavigationManager Navigation
@@ -16,6 +17,7 @@
                 : "Pedidos de clientes: al confirmarlos se valida y reserva la existencia; luego se facturan.")"
             Breadcrumbs="_breadcrumbs">
     <Actions>
+        <ExportActions Build="BuildExportAsync" />
         @if (!PendingOnly && Session.HasPermission(AppPermissions.OrdersCreate))
         {
             <MudButton Href="/pedidos/nuevo" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.NoteAdd">
@@ -244,5 +246,28 @@
     {
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        OrderQuery query = PagedExport.Copy(_query);
+        List<OrderListItemResponse> orders = await PagedExport.AllAsync((page, size) =>
+        {
+            query.Page = page;
+            query.PageSize = size;
+            return OrdersApi.GetPagedAsync(query);
+        });
+
+        return new ExportTable($"pedidos-{DateTime.Today:yyyyMMdd}", PendingOnly ? "Pedidos por aprobar" : "Pedidos", "Según los filtros de la pantalla",
+            [
+                new("Pedido"), new("Fecha", ExportKind.DateTime), new("Código cliente"), new("Cliente"), new("Estado"), new("Condición"),
+                new("Unidades", ExportKind.Number), new("Descuento", ExportKind.Money), new("Total", ExportKind.Money),
+                new("Reserva vence", ExportKind.DateTime), new("Vendedor")
+            ],
+            orders.Select(order => new object?[]
+            {
+                order.Number, order.Date, order.CustomerCode, order.Customer, order.Status, order.SaleType,
+                order.Units, order.Discount, order.Total, order.ReservationExpiresAt, order.Employee
+            }).ToList());
     }
 }

@@ -4,6 +4,7 @@
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Common
 @using TikalLibros.Application.DTOs.Sales
+@using TikalLibros.Web.Services.Reports
 @inject SalesApi SalesApi
 @inject SessionState Session
 @inject NavigationManager Navigation
@@ -14,6 +15,7 @@
             Description="Ventas de mostrador y pedidos facturados, con sus pagos. Las anuladas se muestran tachadas."
             Breadcrumbs="_breadcrumbs">
     <Actions>
+        <ExportActions Build="BuildExportAsync" />
         @if (Session.HasPermission(AppPermissions.SalesCreate))
         {
             <MudButton Href="/ventas/nueva" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.PointOfSale">
@@ -172,5 +174,27 @@
     {
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        SaleQuery query = PagedExport.Copy(_query);
+        List<SaleListItemResponse> sales = await PagedExport.AllAsync((page, size) =>
+        {
+            query.Page = page;
+            query.PageSize = size;
+            return SalesApi.GetPagedAsync(query);
+        });
+
+        return new ExportTable($"ventas-{DateTime.Today:yyyyMMdd}", "Ventas", "Según los filtros de la pantalla",
+            [
+                new("Venta"), new("Fecha", ExportKind.DateTime), new("Cliente"), new("Condición"), new("Estado"), new("Pedido"),
+                new("Vendedor"), new("Total", ExportKind.Money), new("Pagado", ExportKind.Money), new("Saldo", ExportKind.Money), new("Anulada")
+            ],
+            sales.Select(sale => new object?[]
+            {
+                sale.Number, sale.Date, sale.Customer, sale.SaleType, sale.Status, sale.OrderNumber,
+                sale.Employee, sale.Total, sale.Paid, sale.Balance, sale.Annulled
+            }).ToList());
     }
 }

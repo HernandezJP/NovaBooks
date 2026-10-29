@@ -4,6 +4,7 @@
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Common
 @using TikalLibros.Application.DTOs.Purchasing
+@using TikalLibros.Web.Services.Reports
 @inject PurchasesApi PurchasesApi
 @inject SessionState Session
 @inject NavigationManager Navigation
@@ -14,6 +15,7 @@
             Description="Pedidos a proveedores: se emiten, se reciben (parcial o totalmente) y al recibir se actualiza el inventario."
             Breadcrumbs="_breadcrumbs">
     <Actions>
+        <ExportActions Build="BuildExportAsync" />
         @if (CanDirect)
         {
             <MudButton Href="/compras/directa" Variant="Variant.Outlined" Color="Color.Primary"
@@ -269,5 +271,23 @@
     {
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        List<PurchaseOrderListItemResponse> orders = await PagedExport.AllAsync((page, size) => PurchasesApi.GetPagedAsync(
+            new PurchaseOrderQuery { Search = _search, Status = _status, SupplierId = _supplierId, Page = page, PageSize = size }));
+
+        return new ExportTable($"ordenes-de-compra-{DateTime.Today:yyyyMMdd}", "Órdenes de compra", "Según los filtros de la pantalla",
+            [
+                new("Orden"), new("Emisión", ExportKind.DateTime), new("Entrega esperada", ExportKind.Date), new("Código proveedor"),
+                new("Proveedor"), new("Sucursal"), new("Estado"), new("Líneas", ExportKind.Number),
+                new("Unidades pedidas", ExportKind.Number), new("Unidades recibidas", ExportKind.Number), new("Total", ExportKind.Money)
+            ],
+            orders.Select(order => new object?[]
+            {
+                order.Number, order.IssueDate, order.ExpectedDate, order.SupplierCode, order.SupplierName, order.Branch, order.Status,
+                order.Lines, order.OrderedUnits, order.ReceivedUnits, order.Total
+            }).ToList());
     }
 }

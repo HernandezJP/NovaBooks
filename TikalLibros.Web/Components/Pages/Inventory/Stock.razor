@@ -4,6 +4,7 @@
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Common
 @using TikalLibros.Application.DTOs.Inventory
+@using TikalLibros.Web.Services.Reports
 @inject InventoryApi InventoryApi
 @inject SessionState Session
 @inject IDialogService Dialogs
@@ -15,6 +16,7 @@
             Description="Unidades disponibles por libro y almacén, con sus niveles mínimo y máximo."
             Breadcrumbs="_breadcrumbs">
     <Actions>
+        <ExportActions Build="BuildExportAsync" />
         @if (CanAdjust)
         {
             <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Tune"
@@ -284,5 +286,23 @@
     {
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        List<StockItemResponse> stock = await PagedExport.AllAsync((page, size) => InventoryApi.GetStockAsync(
+            new StockQuery { Search = _search, WarehouseId = _warehouseId, Status = _status, Page = page, PageSize = size }));
+
+        return new ExportTable($"existencias-{DateTime.Today:yyyyMMdd}", "Existencias", $"Al {DateTime.Now:dd/MM/yyyy HH:mm}",
+            [
+                new("Código"), new("Título"), new("ISBN"), new("Almacén"), new("Disponible", ExportKind.Number), new("Reservado", ExportKind.Number),
+                new("Libre", ExportKind.Number), new("Mínimo", ExportKind.Number), new("Máximo", ExportKind.Number), new("Ubicación"),
+                new("Último movimiento", ExportKind.DateTime), new("Estado")
+            ],
+            stock.Select(item => new object?[]
+            {
+                item.BookCode, item.Title, item.Isbn, item.Warehouse, item.Available, item.Reserved, item.Free,
+                item.Minimum, item.Maximum, item.Location, item.LastMovementAt, item.Status
+            }).ToList());
     }
 }

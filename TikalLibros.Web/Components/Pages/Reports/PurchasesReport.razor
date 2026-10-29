@@ -3,7 +3,6 @@
 @using TikalLibros.Application.DTOs.Reports
 @using TikalLibros.Web.Services.Reports
 @inject ReportsApi ReportsApi
-@inject IJSRuntime JS
 
 <PageTitle>Reporte de compras | Tikal Libros</PageTitle>
 
@@ -11,10 +10,7 @@
             Description="Mercadería aceptada en recepciones al costo neto (sin IVA), devoluciones al proveedor y órdenes por recibir."
             Breadcrumbs="_breadcrumbs">
     <Actions>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
-                   Disabled="_report is null" OnClick="ExportAsync">
-            Exportar CSV
-        </MudButton>
+        <ExportActions Build="BuildExportAsync" Disabled="_report is null" />
     </Actions>
 </PageHeader>
 
@@ -50,15 +46,9 @@ else
     </div>
 
     <Panel Title="Compras por día" Icon="@Icons.Material.Outlined.BarChart" Subtitle="@($"Del {_report.From:dd/MM/yyyy} al {_report.To:dd/MM/yyyy}")">
-        @{ decimal max = _report.ByDay.Select(day => day.Total).DefaultIfEmpty(0).Max(); }
-        <div class="day-chart" role="img" aria-label="Total comprado por día">
-            @foreach (SalesByDayRow day in _report.ByDay)
-            {
-                <div class="day-chart__bar" tabindex="0" title="@($"{day.Date:dd/MM/yyyy}: {Money(day.Total)} en {day.Count} recepción(es)")"
-                     style="@($"height: {(max == 0 ? 0 : day.Total / max * 100):0.#}%")"></div>
-            }
-        </div>
-        <div class="day-chart__axis"><span>@_report.From.ToString("dd/MM")</span><span>@_report.To.ToString("dd/MM")</span></div>
+        <TlChart Type="@(_report.ByDay.Count > 62 ? ChartType.Line : ChartType.Bar)" AriaLabel="Total comprado por día"
+                 Labels="@_report.ByDay.Select(day => day.Date.ToString("dd/MM")).ToList()"
+                 Series="@([new TlChart.ChartLine("Compras", _report.ByDay.Select(day => day.Total).ToList())])" />
     </Panel>
 
     <div class="layout-split">
@@ -127,12 +117,8 @@ else
         _error = result.Succeeded ? null : result.Message;
     }
 
-    private async Task ExportAsync()
-    {
-        string csv = CsvExport.Build(
-            ["Proveedor", "Recepciones", "Total"],
-            _report!.BySupplier.Select(row => new object?[] { row.Name, row.Count, row.Total }));
-
-        await CsvExport.DownloadAsync(JS, $"compras-{_report.From:yyyyMMdd}-{_report.To:yyyyMMdd}.csv", csv);
-    }
+    private Task<ExportTable?> BuildExportAsync() => Task.FromResult<ExportTable?>(new ExportTable(
+        $"compras-{_report!.From:yyyyMMdd}-{_report.To:yyyyMMdd}", "Libros comprados", $"Del {_report.From:dd/MM/yyyy} al {_report.To:dd/MM/yyyy}",
+        [new("Código"), new("Libro"), new("Unidades", ExportKind.Number), new("Total al costo", ExportKind.Money)],
+        _report.TopBooks.Select(row => new object?[] { row.BookCode, row.Title, row.Units, row.Total }).ToList()));
 }

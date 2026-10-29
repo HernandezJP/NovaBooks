@@ -33,6 +33,13 @@ public abstract class WebTestContext : BunitContext
         Services.AddSingleton(_ => new OrdersApi(Api!));
         Services.AddSingleton(_ => new CashApi(Api!));
         Services.AddSingleton(_ => new ReportsApi(Api!));
+        Services.AddSingleton(_ => new DashboardApi(Api!));
+        Services.AddSingleton(_ => new AlertsApi(Api!));
+        Services.AddSingleton(provider => new AlertState(provider.GetRequiredService<AlertsApi>(), Session!));
+        Services.AddSingleton(_ => new UsersApi(Api!));
+        Services.AddSingleton(_ => new ProductsApi(Api!, Microsoft.Extensions.Options.Options.Create(new ApiOptions())));
+        Services.AddSingleton(_ => new AuthorsApi(Api!));
+        Services.AddSingleton(_ => new PurchasesApi(Api!));
         Services.AddSingleton(_ => new CustomersApi(Api!));
         Services.AddSingleton(_ => new CategoriesApi(Api!));
         Services.AddSingleton(_ => new BranchesApi(Api!));

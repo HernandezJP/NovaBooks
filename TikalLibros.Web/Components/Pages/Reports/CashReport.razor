@@ -3,7 +3,6 @@
 @using TikalLibros.Application.DTOs.Reports
 @using TikalLibros.Web.Services.Reports
 @inject ReportsApi ReportsApi
-@inject IJSRuntime JS
 
 <PageTitle>Reporte de caja | Tikal Libros</PageTitle>
 
@@ -11,10 +10,7 @@
             Description="Aperturas del período con su cuadre (faltantes y sobrantes) y movimientos por tipo y método de pago."
             Breadcrumbs="_breadcrumbs">
     <Actions>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
-                   Disabled="_report is null" OnClick="ExportAsync">
-            Exportar CSV
-        </MudButton>
+        <ExportActions Build="BuildExportAsync" Disabled="_report is null" />
     </Actions>
 </PageHeader>
 
@@ -145,16 +141,14 @@ else
         _error = result.Succeeded ? null : result.Message;
     }
 
-    private async Task ExportAsync()
-    {
-        string csv = CsvExport.Build(
-            ["Caja", "Sucursal", "Cajero", "Apertura", "Cierre", "Inicial", "Esperado", "Contado", "Diferencia"],
-            _report!.Sessions.Select(row => new object?[]
-            {
-                row.CashRegister, row.Branch, row.Employee, row.OpenedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm"),
-                row.ClosedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), row.InitialAmount, row.Expected, row.Counted, row.Difference
-            }));
-
-        await CsvExport.DownloadAsync(JS, $"caja-{_report.From:yyyyMMdd}-{_report.To:yyyyMMdd}.csv", csv);
-    }
+    private Task<ExportTable?> BuildExportAsync() => Task.FromResult<ExportTable?>(new ExportTable(
+        $"caja-{_report!.From:yyyyMMdd}-{_report.To:yyyyMMdd}", "Aperturas y cierres de caja", $"Del {_report.From:dd/MM/yyyy} al {_report.To:dd/MM/yyyy}",
+        [
+            new("Caja"), new("Sucursal"), new("Cajero"), new("Apertura", ExportKind.DateTime), new("Cierre", ExportKind.DateTime),
+            new("Inicial", ExportKind.Money), new("Esperado", ExportKind.Money), new("Contado", ExportKind.Money), new("Diferencia", ExportKind.Money)
+        ],
+        _report.Sessions.Select(row => new object?[]
+        {
+            row.CashRegister, row.Branch, row.Employee, row.OpenedAt, row.ClosedAt, row.InitialAmount, row.Expected, row.Counted, row.Difference
+        }).ToList()));
 }

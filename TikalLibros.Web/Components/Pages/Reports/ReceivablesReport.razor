@@ -3,7 +3,6 @@
 @using TikalLibros.Application.DTOs.Reports
 @using TikalLibros.Web.Services.Reports
 @inject ReportsApi ReportsApi
-@inject IJSRuntime JS
 
 <PageTitle>Cuentas por cobrar | Tikal Libros</PageTitle>
 
@@ -11,10 +10,7 @@
             Description="Saldos de ventas al crédito a la fecha, por antigüedad de vencimiento y por cliente."
             Breadcrumbs="_breadcrumbs">
     <Actions>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
-                   Disabled="_report is null" OnClick="ExportAsync">
-            Exportar CSV
-        </MudButton>
+        <ExportActions Build="BuildExportAsync" Disabled="_report is null" />
     </Actions>
 </PageHeader>
 
@@ -147,16 +143,14 @@ else
         _error = result.Succeeded ? null : result.Message;
     }
 
-    private async Task ExportAsync()
-    {
-        string csv = CsvExport.Build(
-            ["Venta", "Fecha", "Cliente", "Vence", "Total", "Pagado", "Saldo", "Días de atraso", "Antigüedad"],
-            _report!.Sales.Select(row => new object?[]
-            {
-                row.Number, DateOnly.FromDateTime(row.Date.ToLocalTime()), row.Customer, row.DueDate,
-                row.Total, row.Paid, row.Balance, row.DaysOverdue, row.Bucket
-            }));
-
-        await CsvExport.DownloadAsync(JS, $"cuentas-por-cobrar-{_report.AsOf:yyyyMMdd}.csv", csv);
-    }
+    private Task<ExportTable?> BuildExportAsync() => Task.FromResult<ExportTable?>(new ExportTable(
+        $"cuentas-por-cobrar-{_report!.AsOf:yyyyMMdd}", "Cuentas por cobrar", $"Saldos al {_report.AsOf:dd/MM/yyyy}",
+        [
+            new("Venta"), new("Fecha", ExportKind.Date), new("Cliente"), new("Vence", ExportKind.Date), new("Total", ExportKind.Money),
+            new("Pagado", ExportKind.Money), new("Saldo", ExportKind.Money), new("Días de atraso", ExportKind.Number), new("Antigüedad")
+        ],
+        _report.Sales.Select(row => new object?[]
+        {
+            row.Number, row.Date, row.Customer, row.DueDate, row.Total, row.Paid, row.Balance, row.DaysOverdue, row.Bucket
+        }).ToList()));
 }

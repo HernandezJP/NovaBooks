@@ -5,7 +5,6 @@
 @using TikalLibros.Web.Services.Reports
 @inject ReportsApi ReportsApi
 @inject NavigationManager Navigation
-@inject IJSRuntime JS
 
 <PageTitle>Pedidos pendientes | Tikal Libros</PageTitle>
 
@@ -16,10 +15,7 @@
         <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Refresh" OnClick="LoadAsync">
             Actualizar
         </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
-                   Disabled="@(_report is not { Rows.Count: > 0 })" OnClick="ExportAsync">
-            Exportar CSV
-        </MudButton>
+        <ExportActions Build="BuildExportAsync" Disabled="@(_report is not { Rows.Count: > 0 })" />
     </Actions>
 </PageHeader>
 
@@ -115,15 +111,14 @@ else
         _error = result.Succeeded ? null : result.Message;
     }
 
-    private async Task ExportAsync()
-    {
-        string csv = CsvExport.Build(
-            ["Pedido", "Fecha", "Cliente", "Estado", "Condición", "Antigüedad (días)", "Reserva vence", "Vendedor", "Total"],
-            _report!.Rows.Select(row => new object?[]
-            {
-                row.Number, row.Date, row.Customer, row.Status, row.SaleType, row.AgeDays, row.ReservationExpiresAt, row.Employee, row.Total
-            }));
-
-        await CsvExport.DownloadAsync(JS, $"pedidos-pendientes-{DateTime.Today:yyyyMMdd}.csv", csv);
-    }
+    private Task<ExportTable?> BuildExportAsync() => Task.FromResult<ExportTable?>(new ExportTable(
+        $"pedidos-pendientes-{DateTime.Today:yyyyMMdd}", "Pedidos pendientes", $"Al {DateTime.Now:dd/MM/yyyy HH:mm}",
+        [
+            new("Pedido"), new("Fecha", ExportKind.DateTime), new("Cliente"), new("Estado"), new("Condición"),
+            new("Antigüedad (días)", ExportKind.Number), new("Reserva vence", ExportKind.DateTime), new("Vendedor"), new("Total", ExportKind.Money)
+        ],
+        _report!.Rows.Select(row => new object?[]
+        {
+            row.Number, row.Date, row.Customer, row.Status, row.SaleType, row.AgeDays, row.ReservationExpiresAt, row.Employee, row.Total
+        }).ToList()));
 }

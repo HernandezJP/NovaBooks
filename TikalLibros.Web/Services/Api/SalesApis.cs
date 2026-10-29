@@ -214,6 +214,18 @@ public sealed class ReportsApi(ApiClient api)
             cancellationToken);
 }
 
+public sealed class AlertsApi(ApiClient api)
+{
+    public Task<ApiResult<AlertsResponse>> GetAsync(CancellationToken cancellationToken = default) =>
+        api.GetAsync<AlertsResponse>("api/alertas", cancellationToken);
+}
+
+public sealed class DashboardApi(ApiClient api)
+{
+    public Task<ApiResult<DashboardResponse>> GetAsync(CancellationToken cancellationToken = default) =>
+        api.GetAsync<DashboardResponse>("api/dashboard", cancellationToken);
+}
+
 public sealed class AuditApi(ApiClient api)
 {
     public Task<ApiResult<AuditCatalogsResponse>> GetCatalogsAsync(CancellationToken cancellationToken = default) =>

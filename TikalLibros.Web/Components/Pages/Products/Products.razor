@@ -4,6 +4,7 @@
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Common
 @using TikalLibros.Application.DTOs.Products
+@using TikalLibros.Web.Services.Reports
 @inject ProductsApi ProductsApi
 @inject SessionState Session
 @inject IDialogService Dialogs
@@ -29,6 +30,7 @@
 <div class="layout-split">
     <Panel Title="Catálogo de libros" Subtitle="Seleccione un libro para ver su detalle." Icon="@Icons.Material.Outlined.AutoStories">
     <Actions>
+        <ExportActions Build="BuildExportAsync" ShowPrint="false" />
         @if (Session.HasPermission(AppPermissions.CatalogCreate))
         {
             <MudButton Href="/productos/nuevo" Variant="Variant.Filled" Color="Color.Primary"
@@ -404,5 +406,21 @@
     {
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        List<ProductListItemResponse> books = await PagedExport.AllAsync((page, size) =>
+            ProductsApi.GetPagedAsync(_search, _status, _categoryId, page, size));
+
+        return new ExportTable($"libros-{DateTime.Today:yyyyMMdd}", "Catálogo de libros", "Según los filtros de la pantalla",
+            [
+                new("Código"), new("Título"), new("Subtítulo"), new("ISBN-13"), new("ISBN-10"), new("Autores"), new("Categoría"), new("Formato"),
+                new("Precio", ExportKind.Money), new("Costo de referencia", ExportKind.Money), new("A la venta"), new("Activo")
+            ],
+            books.Select(x => new object?[]
+            {
+                x.Code, x.Title, x.Subtitle, x.Isbn13, x.Isbn10, x.Authors, x.PrimaryCategory, x.Format, x.Price, x.ReferenceCost, x.AllowsSale, x.IsActive
+            }).ToList());
     }
 }

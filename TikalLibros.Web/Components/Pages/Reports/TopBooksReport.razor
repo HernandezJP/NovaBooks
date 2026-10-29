@@ -3,7 +3,6 @@
 @using TikalLibros.Application.DTOs.Reports
 @using TikalLibros.Web.Services.Reports
 @inject ReportsApi ReportsApi
-@inject IJSRuntime JS
 
 <PageTitle>Libros más vendidos | Tikal Libros</PageTitle>
 
@@ -11,10 +10,7 @@
             Description="Ranking del período por unidades o por ingresos. El costo y el margen solo se muestran con permiso de costos."
             Breadcrumbs="_breadcrumbs">
     <Actions>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
-                   Disabled="@(_report is not { Rows.Count: > 0 })" OnClick="ExportAsync">
-            Exportar CSV
-        </MudButton>
+        <ExportActions Build="BuildExportAsync" Disabled="@(_report is not { Rows.Count: > 0 })" />
     </Actions>
 </PageHeader>
 
@@ -143,16 +139,23 @@ else
         _error = result.Succeeded ? null : result.Message;
     }
 
-    private async Task ExportAsync()
+    private Task<ExportTable?> BuildExportAsync()
     {
-        string[] headers = _report!.IncludesCosts
-            ? ["Puesto", "Código", "Título", "Unidades", "Ventas", "Descuento", "Ingresos", "Costo", "Margen", "Margen %"]
-            : ["Puesto", "Código", "Título", "Unidades", "Ventas", "Descuento", "Ingresos"];
+        List<ExportColumn> columns =
+        [
+            new("Puesto", ExportKind.Number), new("Código"), new("Título"), new("Unidades", ExportKind.Number),
+            new("Ventas", ExportKind.Number), new("Descuento", ExportKind.Money), new("Ingresos", ExportKind.Money)
+        ];
 
-        string csv = CsvExport.Build(headers, _report.Rows.Select(row => _report.IncludesCosts
-            ? new object?[] { row.Rank, row.BookCode, row.Title, row.Units, row.SalesCount, row.Discount, row.Revenue, row.Cost, row.Margin, row.MarginPercent }
-            : new object?[] { row.Rank, row.BookCode, row.Title, row.Units, row.SalesCount, row.Discount, row.Revenue }));
+        if (_report!.IncludesCosts)
+        {
+            columns.AddRange([new("Costo", ExportKind.Money), new("Margen", ExportKind.Money), new("Margen %", ExportKind.Percent)]);
+        }
 
-        await CsvExport.DownloadAsync(JS, $"libros-mas-vendidos-{_report.From:yyyyMMdd}-{_report.To:yyyyMMdd}.csv", csv);
+        return Task.FromResult<ExportTable?>(new ExportTable(
+            $"libros-mas-vendidos-{_report.From:yyyyMMdd}-{_report.To:yyyyMMdd}", "Libros más vendidos", $"Del {_report.From:dd/MM/yyyy} al {_report.To:dd/MM/yyyy}", columns,
+            _report.Rows.Select(row => _report.IncludesCosts
+                ? new object?[] { row.Rank, row.BookCode, row.Title, row.Units, row.SalesCount, row.Discount, row.Revenue, row.Cost, row.Margin, row.MarginPercent }
+                : new object?[] { row.Rank, row.BookCode, row.Title, row.Units, row.SalesCount, row.Discount, row.Revenue }).ToList()));
     }
 }

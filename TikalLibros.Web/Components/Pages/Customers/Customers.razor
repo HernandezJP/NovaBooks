@@ -3,6 +3,7 @@
 @implements IDisposable
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Customers
+@using TikalLibros.Web.Services.Reports
 @inject CustomersApi CustomersApi
 @inject SessionState Session
 @inject IDialogService Dialogs
@@ -25,6 +26,7 @@
 
 <Panel Title="Clientes" Subtitle="Busque por código, nombre, NIT, identificación, correo o teléfono." Icon="@Icons.Material.Outlined.Groups">
     <Actions>
+        <ExportActions Build="BuildExportAsync" ShowPrint="false" />
         @if (Session.HasPermission(AppPermissions.CustomersCreate))
         {
             <MudButton Href="/clientes/nuevo" Variant="Variant.Filled" Color="Color.Primary"
@@ -261,5 +263,21 @@
     {
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        List<CustomerListItemResponse> customers = await PagedExport.AllAsync((page, size) =>
+            CustomersApi.GetPagedAsync(_search, _status, _personType, page, size));
+
+        return new ExportTable($"clientes-{DateTime.Today:yyyyMMdd}", "Clientes", "Según los filtros de la pantalla",
+            [
+                new("Código"), new("Nombre o razón social"), new("Tipo"), new("NIT"), new("Identificación"), new("Correo"), new("Teléfono"),
+                new("Límite de crédito", ExportKind.Money), new("Días de crédito", ExportKind.Number), new("Activo")
+            ],
+            customers.Select(x => new object?[]
+            {
+                x.Code, x.DisplayName, x.PersonType == "JURIDICA" ? "Jurídica" : "Natural", x.Nit, x.Identification, x.Email, x.Phone, x.CreditLimit, x.CreditDays, x.IsActive
+            }).ToList());
     }
 }

@@ -352,11 +352,6 @@
     gap: 10px;
     padding: 4px 8px;
     border-radius: var(--tl-radius-md);
-    cursor: pointer;
-}
-
-.user-menu__activator:hover {
-    background: rgba(31, 48, 73, 0.05);
 }
 
 .mud-avatar.user-menu__avatar {
@@ -364,12 +359,6 @@
     color: #F1C27D;
     font-size: 0.8rem;
     font-weight: 700;
-}
-
-.mud-avatar.user-menu__avatar--large {
-    width: 40px;
-    height: 40px;
-    font-size: 0.95rem;
 }
 
 .user-menu__text {
@@ -384,29 +373,9 @@
     color: var(--tl-color-text);
 }
 
-.user-menu__role,
-.user-menu__email {
+.user-menu__role {
     font-size: 0.75rem;
     color: var(--tl-color-text-muted);
-}
-
-.user-menu__chevron {
-    color: var(--tl-color-text-muted);
-}
-
-.user-menu__header {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--tl-space-3);
-    padding: var(--tl-space-4);
-    min-width: 270px;
-}
-
-.user-menu__roles {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: var(--tl-space-2);
 }
 
 .role-pill {
@@ -642,6 +611,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--tl-space-4);
     align-items: start;
+}
+
+/* Paneles de la misma altura (por ejemplo, gráficos lado a lado). */
+.layout-half--stretch {
+    align-items: stretch;
 }
 
 @media (max-width: 960px) {
@@ -1646,6 +1620,16 @@ body,
     min-width: 0;
 }
 
+/* Separación uniforme entre bloques consecutivos de una página (filtros,
+   tarjetas, paneles y avisos); dentro de los contenedores con gap no se suma. */
+:is(.panel, .stat-grid, .layout-split, .layout-half, .layout-stack, .mud-alert) + :is(.panel, .stat-grid, .layout-split, .layout-half, .layout-stack) {
+    margin-top: var(--tl-space-4);
+}
+
+:is(.layout-stack, .layout-split, .layout-half) > :is(.panel, .stat-grid, .layout-split, .layout-half, .layout-stack) {
+    margin-top: 0;
+}
+
 
 /* Campos de búsqueda con etiquetas (autores del libro). */
 .authors-field {
@@ -2329,4 +2313,218 @@ body,
     position: absolute;
     left: 0.25rem;
     color: var(--mud-palette-text-secondary);
+}
+
+/* Gráficos (MudChart) y tabla equivalente solo para lectores de pantalla. */
+.tl-chart {
+    margin: 0;
+}
+
+.tl-chart .mud-chart {
+    font-size: 0.75rem;
+}
+
+/* La dona y el pastel no crecen con el ancho del panel: quedan centrados y
+   con una altura parecida a la de los gráficos de línea o barras. */
+.tl-chart--radial {
+    max-width: 320px;
+    margin: 0 auto;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ---------- Centro de alertas (campana del navbar) ---------- */
+.app-bar__alerts {
+    margin-right: var(--tl-space-2);
+}
+
+.alert-drawer.mud-drawer {
+    background: var(--tl-color-surface-warm);
+}
+
+.alert-center {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-3);
+    padding: var(--tl-space-4);
+}
+
+.alert-center__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--tl-space-2);
+}
+
+.alert-center__title {
+    margin: 0;
+    font-size: 1.15rem;
+}
+
+.alert-center__subtitle {
+    margin: 2px 0 0;
+    font-size: 0.78rem;
+    color: var(--tl-color-text-muted);
+}
+
+.alert-center__actions {
+    display: flex;
+    gap: 2px;
+}
+
+.alert-center__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tl-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.alert-item {
+    --alert-color: #2F5C9A;
+    /* Tono para texto pequeño: contraste de al menos 4.5:1 sobre blanco. */
+    --alert-text: #2F5C9A;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tl-space-3);
+    padding: 12px;
+    border: 1px solid var(--tl-color-border);
+    border-left: 4px solid var(--alert-color);
+    border-radius: var(--tl-radius-md);
+    background: var(--tl-color-surface);
+    color: var(--tl-color-text);
+    text-decoration: none;
+}
+
+.alert-item:hover,
+.alert-item:focus-visible {
+    background: rgba(31, 48, 73, 0.04);
+}
+
+.alert-item--critica {
+    --alert-color: #9B2C2C;
+    --alert-text: #9B2C2C;
+}
+
+.alert-item--advertencia {
+    --alert-color: #B7791F;
+    --alert-text: #85570F;
+}
+
+.alert-item__icon {
+    color: var(--alert-color);
+    line-height: 0;
+    padding-top: 2px;
+}
+
+.alert-item__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.alert-item__title {
+    display: flex;
+    align-items: center;
+    gap: var(--tl-space-2);
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.alert-item__count {
+    min-width: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--alert-text);
+    color: #FFFFFF;
+    font-size: 0.72rem;
+    text-align: center;
+}
+
+.alert-item__severity {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--alert-text);
+}
+
+.alert-item__message {
+    font-size: 0.8rem;
+    color: var(--tl-color-text-muted);
+}
+
+.alert-item__chevron {
+    color: var(--tl-color-text-muted);
+    align-self: center;
+}
+
+/* ---------- Exportación e impresión de listas y reportes ---------- */
+.export-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--tl-space-2);
+}
+
+.print-header {
+    display: none;
+}
+
+@media print {
+    /* Solo el contenido: sin filtros, paginación ni botones. */
+    .page-header__actions,
+    .list-toolbar,
+    .export-actions,
+    .list-pager,
+    .tl-table__actions,
+    .mud-table-pagination,
+    .app-bar__alerts {
+        display: none !important;
+    }
+
+    .print-header {
+        display: flex !important;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #D9D4CC;
+        font-size: 0.75rem;
+        color: #5F6673;
+    }
+
+    .panel,
+    .stat-card {
+        box-shadow: none !important;
+        break-inside: avoid;
+    }
+
+    .tl-table tr {
+        break-inside: avoid;
+    }
+
+    .table-scroll {
+        overflow: visible !important;
+    }
+
+    .tl-table .col-optional {
+        display: table-cell !important;
+    }
+
+    a {
+        color: inherit;
+        text-decoration: none;
+    }
 }

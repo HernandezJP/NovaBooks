@@ -36,8 +36,8 @@
                         }
                         else
                         {
-                            <MudNumericField T="decimal?" @bind-Value="row.Value" Label="@Unit(row.Parameter.Key)"
-                                             Min="0m" Max="100m" Format="@(row.Parameter.DataType == "INTEGER" ? "N0" : "0.##")" HideSpinButtons="true"
+                            <MudNumericField T="decimal?" @bind-Value="row.Value" Label="@Unit(row.Parameter.DataType)"
+                                             Min="0m" Max="@(row.Parameter.DataType == "INTEGER" ? 365m : 100m)" Format="@(row.Parameter.DataType == "INTEGER" ? "N0" : "0.##")" HideSpinButtons="true"
                                              Disabled="@(!row.Parameter.IsEditable || row.Saving)" Error="@(row.Error is not null)" ErrorText="@row.Error"
                                              Variant="Variant.Outlined" Margin="Margin.Dense" Class="list-toolbar__filter" />
                         }
@@ -72,11 +72,13 @@
         "VENTAS_DESCUENTO_SIN_APROBACION" => "Descuento sin aprobación",
         "VENTAS_DESCUENTO_MAXIMO" => "Descuento máximo",
         "PEDIDOS_DIAS_RESERVA" => "Días de reserva de pedidos",
+        "VENTAS_DIAS_DEVOLUCION" => "Días para devoluciones de clientes",
         "FACTURA_NIT_EMISOR" => "NIT del emisor de facturas",
         _ => key
     };
 
-    private static string Unit(string key) => key == "PEDIDOS_DIAS_RESERVA" ? "Días" : "Porcentaje (%)";
+    // Los parámetros enteros son días; los decimales, porcentajes.
+    private static string Unit(string dataType) => dataType == "INTEGER" ? "Días" : "Porcentaje (%)";
 
     protected override Task OnInitializedAsync() => LoadAsync();
 

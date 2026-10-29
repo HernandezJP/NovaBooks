@@ -3,6 +3,7 @@
 @implements IDisposable
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Sales
+@using TikalLibros.Web.Services.Reports
 @inject ReturnsApi ReturnsApi
 @inject NavigationManager Navigation
 
@@ -12,6 +13,7 @@
             Description="Notas de crédito sobre ventas: abonan al saldo pendiente o se reembolsan por caja."
             Breadcrumbs="_breadcrumbs">
     <Actions>
+        <ExportActions Build="BuildExportAsync" />
         <MudButton Href="/devoluciones/nueva" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.AssignmentReturn">
             Nueva devolución
         </MudButton>
@@ -134,5 +136,28 @@
     {
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        ReturnQuery query = PagedExport.Copy(_query);
+        List<ReturnListItemResponse> returns = await PagedExport.AllAsync((page, size) =>
+        {
+            query.Page = page;
+            query.PageSize = size;
+            return ReturnsApi.GetPagedAsync(query);
+        });
+
+        return new ExportTable($"devoluciones-{DateTime.Today:yyyyMMdd}", "Devoluciones de clientes", "Según los filtros de la pantalla",
+            [
+                new("Devolución"), new("Fecha", ExportKind.DateTime), new("Venta"), new("Cliente"), new("Unidades", ExportKind.Number),
+                new("Total", ExportKind.Money), new("Abonado al saldo", ExportKind.Money), new("Reembolsado", ExportKind.Money),
+                new("Registró"), new("Anulada")
+            ],
+            returns.Select(item => new object?[]
+            {
+                item.Number, item.Date, item.SaleNumber, item.Customer, item.Units, item.Total,
+                item.CreditApplied, item.Refunded, item.Employee, item.Annulled
+            }).ToList());
     }
 }

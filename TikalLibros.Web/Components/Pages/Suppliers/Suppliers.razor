@@ -3,6 +3,7 @@
 @implements IDisposable
 @using TikalLibros.Application.Common
 @using TikalLibros.Application.DTOs.Suppliers
+@using TikalLibros.Web.Services.Reports
 @inject SuppliersApi SuppliersApi
 @inject SessionState Session
 @inject IDialogService Dialogs
@@ -25,6 +26,7 @@
 
 <Panel Title="Proveedores" Subtitle="Busque por código, razón social, nombre, NIT o correo." Icon="@Icons.Material.Outlined.LocalShipping">
     <Actions>
+        <ExportActions Build="BuildExportAsync" ShowPrint="false" />
         @if (Session.HasPermission(AppPermissions.SuppliersCreate))
         {
             <MudButton Href="/proveedores/nuevo" Variant="Variant.Filled" Color="Color.Primary"
@@ -284,5 +286,21 @@
     {
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        List<SupplierListItemResponse> suppliers = await PagedExport.AllAsync((page, size) =>
+            SuppliersApi.GetPagedAsync(_search, _status, _personType, page, size));
+
+        return new ExportTable($"proveedores-{DateTime.Today:yyyyMMdd}", "Proveedores", "Según los filtros de la pantalla",
+            [
+                new("Código"), new("Razón social o nombre"), new("Nombre comercial"), new("Tipo"), new("NIT"), new("Correo"), new("Teléfono"),
+                new("Límite de crédito", ExportKind.Money), new("Días de crédito", ExportKind.Number), new("Órdenes abiertas", ExportKind.Number), new("Activo")
+            ],
+            suppliers.Select(x => new object?[]
+            {
+                x.Code, x.DisplayName, x.TradeName, x.PersonType == "JURIDICA" ? "Jurídica" : "Natural", x.Nit, x.Email, x.Phone, x.CreditLimit, x.CreditDays, x.OpenOrders, x.IsActive
+            }).ToList());
     }
 }

@@ -1,189 +1,125 @@
 @page "/"
+@using TikalLibros.Application.DTOs.Reports
 @inject SessionState Session
-@inject UsersApi UsersApi
-@inject CustomersApi CustomersApi
-@inject ProductsApi ProductsApi
-@inject AuthorsApi AuthorsApi
-@inject PurchasesApi PurchasesApi
-@inject InventoryApi InventoryApi
-@inject SalesApi SalesApi
-@inject OrdersApi OrdersApi
+@inject DashboardApi DashboardApi
 
 <PageTitle>Inicio | Tikal Libros</PageTitle>
 
 <PageHeader Title="@($"{Greeting()}, {Session.User?.UserName}")"
-            Description="Este es el resumen de su librería y los módulos a los que tiene acceso." />
+            Description="Lo más importante del día según sus permisos." />
 
-@if (_stats.Count > 0)
+@if (_error is not null)
 {
-    <div class="stat-grid">
-        @foreach (Stat stat in _stats)
-        {
-            <StatCard Tint="@stat.Tint" Icon="@stat.Icon" Label="@stat.Label" Href="@stat.Href"
-                      Loading="stat.Loading" Value="@stat.Value?.ToString("N0")" Error="@stat.Error" />
-        }
-    </div>
+    <div class="panel"><ErrorState Title="No fue posible cargar los indicadores" Message="@_error" OnRetry="LoadAsync" /></div>
+}
+else if (_dashboard is null)
+{
+    <div class="panel"><LoadingState Rows="3" /></div>
+}
+else
+{
+    @if (_cards.Count > 0)
+    {
+        <div class="stat-grid">
+            @foreach (Card card in _cards)
+            {
+                <StatCard Tint="@card.Tint" Icon="@card.Icon" Label="@card.Label" Href="@card.Href" Value="@card.Value" Caption="@card.Caption" />
+            }
+        </div>
+    }
+
+    @if (_dashboard.Sales is { } sales)
+    {
+        <div class="layout-half layout-half--stretch">
+            <Panel Title="Ventas de los últimos 30 días" Icon="@Icons.Material.Outlined.ShowChart" Subtitle="Total vendido por día, sin anuladas.">
+                <TlChart Type="ChartType.Line" AriaLabel="Ventas por día de los últimos 30 días" Height="300px"
+                         Labels="@sales.Last30Days.Select(day => day.Date.ToString("dd/MM")).ToList()"
+                         Series="@([new TlChart.ChartLine("Ventas", sales.Last30Days.Select(day => day.Total).ToList())])" />
+            </Panel>
+            <Panel Title="Cobros del mes por método" Icon="@Icons.Material.Outlined.DonutLarge">
+                <TlChart Type="ChartType.Donut" AriaLabel="Cobros del mes por método de pago" EmptyMessage="Aún no hay cobros este mes." Height="300px"
+                         Labels="@sales.PaymentMethods.Select(row => row.Name).ToList()"
+                         Series="@([new TlChart.ChartLine("Cobros", sales.PaymentMethods.Select(row => row.Total).ToList())])" />
+            </Panel>
+        </div>
+    }
 }
 
-<div class="layout-half">
-    <Panel Title="Accesos rápidos" Subtitle="Tareas frecuentes según sus permisos." Icon="@Icons.Material.Outlined.Bolt">
-        @if (_shortcuts.Count == 0)
-        {
-            <EmptyState Icon="@Icons.Material.Outlined.Lock" Title="Sin accesos disponibles"
-                        Message="Su usuario no tiene permisos sobre los módulos. Comuníquese con un administrador." />
-        }
-        else
-        {
-            <nav class="link-list" aria-label="Accesos rápidos">
-                @foreach (Shortcut shortcut in _shortcuts)
-                {
-                    <a href="@shortcut.Href" class="link-list__item">
-                        <span class="link-list__icon" aria-hidden="true"><MudIcon Icon="@shortcut.Icon" Size="Size.Small" /></span>
-                        <span class="link-list__text">
-                            <span class="link-list__title">@shortcut.Title</span>
-                            <span class="link-list__description">@shortcut.Description</span>
-                        </span>
-                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Class="link-list__chevron" />
-                    </a>
-                }
-            </nav>
-        }
-    </Panel>
-
-    <Panel Title="Su cuenta" Subtitle="Datos de la sesión actual." Icon="@Icons.Material.Outlined.AccountCircle">
-        @if (Session.User is { } user)
-        {
-            <div class="account-card">
-                <MudAvatar Class="user-menu__avatar user-menu__avatar--large">@Initials(user.UserName)</MudAvatar>
-                <div>
-                    <div class="account-card__name">@user.UserName</div>
-                    <div class="cell-secondary">@user.Email</div>
-                </div>
-            </div>
-            <dl class="detail-list">
-                <dt>Roles</dt>
-                <dd>
-                    @if (user.Roles.Count == 0)
-                    {
-                        <span class="cell-secondary">Sin roles asignados</span>
-                    }
-                    @foreach (string role in user.Roles)
-                    {
-                        <span class="role-pill mr-1">@role</span>
-                    }
-                </dd>
-                <dt>Permisos</dt>
-                <dd>@user.Permissions.Count permisos vigentes</dd>
-                <dt>Sesión</dt>
-                <dd>Válida en este navegador hasta cerrar sesión o expirar.</dd>
-            </dl>
-        }
-    </Panel>
-</div>
-
 @code {
-    private readonly List<Stat> _stats = [];
-    private readonly List<Shortcut> _shortcuts = [];
+    /// <summary>Tarjetas como máximo: se muestran las de mayor prioridad que el usuario puede ver.</summary>
+    private const int MaxCards = 4;
 
-    protected override async Task OnInitializedAsync()
+    private List<Card> _cards = [];
+    private DashboardResponse? _dashboard;
+    private string? _error;
+
+    private static string Money(decimal value) => $"Q {value:N2}";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
     {
-        if (Session.HasPermission(AppPermissions.SalesView))
-        {
-            DateOnly today = DateOnly.FromDateTime(DateTime.Today);
-            _stats.Add(new Stat("mint", Icons.Material.Outlined.ReceiptLong, "Ventas pagadas hoy", "/ventas",
-                async () => await SalesApi.GetPagedAsync(new() { From = today, To = today, Status = "PAGADA", PageSize = 1 }) is { Succeeded: true } r
-                    ? r.Data!.TotalItems : null));
-        }
-
-        if (Session.HasPermission(AppPermissions.OrdersApprove))
-        {
-            _stats.Add(new Stat("peach", Icons.Material.Outlined.FactCheck, "Pedidos por aprobar", "/pedidos/aprobaciones",
-                async () => await OrdersApi.GetPagedAsync(new() { Status = "POR_APROBAR", PageSize = 1 }) is { Succeeded: true } r
-                    ? r.Data!.TotalItems : null));
-        }
-
-        if (Session.HasPermission(AppPermissions.CatalogView))
-        {
-            _stats.Add(new Stat("peach", Icons.Material.Outlined.MenuBook, "Libros activos", "/productos",
-                async () => await ProductsApi.GetPagedAsync(null, StatusFilter.Active, null, 1, 1) is { Succeeded: true } r
-                    ? r.Data!.TotalItems : null));
-            _stats.Add(new Stat("sky", Icons.Material.Outlined.HistoryEdu, "Autores registrados", "/autores",
-                async () => await AuthorsApi.GetPagedAsync(null, StatusFilter.Active, 1, 1) is { Succeeded: true } r
-                    ? r.Data!.TotalItems : null));
-        }
-
-        if (Session.HasPermission(AppPermissions.CustomersView))
-        {
-            _stats.Add(new Stat("mint", Icons.Material.Outlined.Groups, "Clientes activos", "/clientes",
-                async () => await CustomersApi.GetPagedAsync(null, StatusFilter.Active, null, 1, 1) is { Succeeded: true } r
-                    ? r.Data!.TotalItems : null));
-        }
-
-        if (Session.HasPermission(AppPermissions.PurchasesView))
-        {
-            _stats.Add(new Stat("sky", Icons.Material.Outlined.LocalShipping, "Órdenes por recibir", "/compras?estado=EMITIDA",
-                async () =>
-                {
-                    var issued = await PurchasesApi.GetPagedAsync(new() { Status = "EMITIDA", PageSize = 1 });
-                    var partial = await PurchasesApi.GetPagedAsync(new() { Status = "PARCIAL", PageSize = 1 });
-                    return issued.Succeeded && partial.Succeeded ? issued.Data!.TotalItems + partial.Data!.TotalItems : null;
-                }));
-        }
-
-        if (Session.HasPermission(AppPermissions.InventoryView))
-        {
-            _stats.Add(new Stat("peach", Icons.Material.Outlined.NotificationImportant, "Alertas de inventario", "/inventario/alertas",
-                async () => await InventoryApi.GetAlertSummaryAsync() is { Succeeded: true } r ? r.Data!.Total : null));
-        }
-
-        if (Session.HasPermission(AppPermissions.UsersView))
-        {
-            _stats.Add(new Stat("sand", Icons.Material.Outlined.Badge, "Usuarios activos", "/usuarios",
-                async () => await UsersApi.GetPagedAsync(null, StatusFilter.Active, 1, 1) is { Succeeded: true } r
-                    ? r.Data!.TotalItems : null));
-        }
-
-        AddShortcut(AppPermissions.SalesCreate, Icons.Material.Outlined.PointOfSale, "Punto de venta",
-            "Venta de mostrador: cobre y el inventario se descuenta solo.", "/ventas/nueva");
-        AddShortcut(AppPermissions.OrdersCreate, Icons.Material.Outlined.NoteAdd, "Nuevo pedido",
-            "Reserve libros para un cliente; con descuento alto pasa a aprobación.", "/pedidos/nuevo");
-        AddShortcut(AppPermissions.CashOpen, Icons.Material.Outlined.Payments, "Mi caja",
-            "Abra su caja al iniciar el turno y ciérrela con el arqueo.", "/caja");
-        AddShortcut(AppPermissions.CatalogCreate, Icons.Material.Outlined.LibraryAdd, "Registrar libro",
-            "Agregue un título al catálogo con su ISBN y precio.", "/productos/nuevo");
-        AddShortcut(AppPermissions.CustomersCreate, Icons.Material.Outlined.PersonAdd, "Registrar cliente",
-            "Alta de persona natural o jurídica con su NIT.", "/clientes/nuevo");
-        AddShortcut(AppPermissions.PurchasesCreate, Icons.Material.Outlined.AddShoppingCart, "Nueva orden de compra",
-            "Pida libros a un proveedor y emita la orden.", "/compras/nueva");
-        AddShortcut(AppPermissions.PurchasesReceive, Icons.Material.Outlined.MoveToInbox, "Recibir mercadería",
-            "Registre lo que llegó de una orden emitida; actualiza el inventario.", "/compras?estado=EMITIDA");
-        AddShortcut(AppPermissions.InventoryView, Icons.Material.Outlined.Inventory2, "Existencias",
-            "Consulte unidades, mínimos, máximos y alertas.", "/inventario/existencias");
-        AddShortcut(AppPermissions.CatalogView, Icons.Material.Outlined.HistoryEdu, "Autores",
-            "Consulte y registre los autores del catálogo.", "/autores");
-        AddShortcut(AppPermissions.UsersView, Icons.Material.Outlined.ManageAccounts, "Usuarios del sistema",
-            "Cuentas de acceso del personal y sus roles.", "/usuarios");
-        AddShortcut(AppPermissions.RolesAssignPermissions, Icons.Material.Outlined.Key, "Roles y permisos",
-            "Defina qué puede hacer cada rol.", "/permisos");
-
-        // Totales livianos (pageSize = 1) en paralelo; cada tarjeta maneja su error.
-        await Task.WhenAll(_stats.Select(LoadStatAsync));
+        _error = null;
+        ApiResult<DashboardResponse> result = await DashboardApi.GetAsync();
+        _dashboard = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+        _cards = _dashboard is null ? [] : Cards(_dashboard).Take(MaxCards).ToList();
     }
 
-    private void AddShortcut(string permission, string icon, string title, string description, string href)
+    /// <summary>Indicadores en orden de prioridad: primero lo que se mira o atiende a diario.</summary>
+    private IEnumerable<Card> Cards(DashboardResponse data)
     {
-        if (Session.HasPermission(permission))
+        if (data.Sales is { } sales)
         {
-            _shortcuts.Add(new Shortcut(icon, title, description, href));
-        }
-    }
+            yield return new Card("mint", Icons.Material.Outlined.ReceiptLong, "Ventas de hoy", "/ventas",
+                Money(sales.TodayTotal), $"{sales.TodayCount} venta(s)");
 
-    private async Task LoadStatAsync(Stat stat)
-    {
-        stat.Value = await stat.Load();
-        stat.Error = stat.Value is null ? "No fue posible obtener el total." : null;
-        stat.Loading = false;
-        await InvokeAsync(StateHasChanged);
+            yield return new Card("sky", Icons.Material.Outlined.CalendarMonth, "Ventas del mes", "/reportes/ventas",
+                Money(sales.MonthTotal),
+                sales.MonthChangePercent is { } change
+                    ? $"{(change >= 0 ? "Sube" : "Baja")} {Math.Abs(change):0.#} % frente al mismo tramo del mes anterior"
+                    : $"{sales.MonthCount} venta(s) · ticket promedio {Money(sales.AverageTicket)}");
+        }
+
+        if (data.Receivables is { } receivables)
+        {
+            yield return new Card("peach", Icons.Material.Outlined.AccountBalanceWallet, "Por cobrar", "/reportes/cuentas-por-cobrar",
+                Money(receivables.Total), $"Vencido {Money(receivables.Overdue)}");
+        }
+
+        if (data.Orders is { } orders)
+        {
+            yield return Session.HasPermission(AppPermissions.OrdersApprove)
+                ? new Card("peach", Icons.Material.Outlined.FactCheck, "Pedidos por aprobar", "/pedidos/aprobaciones",
+                    orders.PendingApproval.ToString("N0"), $"{orders.Reserved} reservado(s) · {orders.ExpiringSoon} vence(n) en 24 h")
+                : new Card("peach", Icons.Material.Outlined.Assignment, "Pedidos reservados", "/pedidos",
+                    orders.Reserved.ToString("N0"), $"{orders.ExpiringSoon} vence(n) en 24 h");
+        }
+
+        if (data.Cash is { } cash)
+        {
+            yield return new Card("sky", Icons.Material.Outlined.PointOfSale, "Caja de hoy (neto)", "/caja/aperturas",
+                Money(cash.TodayIncome - cash.TodayExpense), $"{cash.OpenSessions} caja(s) abierta(s)");
+        }
+
+        if (data.Inventory is { } inventory)
+        {
+            yield return new Card("sand", Icons.Material.Outlined.NotificationImportant, "Alertas de inventario", "/inventario/alertas",
+                (inventory.OutOfStock + inventory.BelowMinimum).ToString("N0"),
+                $"{inventory.OutOfStock} agotado(s) · {inventory.BelowMinimum} bajo el mínimo");
+        }
+
+        if (data.Purchases is { } purchases)
+        {
+            yield return new Card("sand", Icons.Material.Outlined.LocalShipping, "Compras por recibir", "/compras",
+                Money(purchases.PendingAmount), $"{purchases.PendingOrders} orden(es)");
+        }
+
+        if (data.Profit is { } profit)
+        {
+            yield return new Card("mint", Icons.Material.Outlined.TrendingUp, "Margen bruto del mes", "/reportes/rentabilidad",
+                Money(profit.Margin), profit.MarginPercent is { } percent ? $"{percent:0.#} % del ingreso sin IVA" : "sin ventas en el mes");
+        }
     }
 
     private static string Greeting() => DateTime.Now.Hour switch
@@ -193,20 +129,5 @@
         _ => "Buenas noches"
     };
 
-    private static string Initials(string userName) =>
-        userName[..Math.Min(2, userName.Length)].ToUpperInvariant();
-
-    private sealed record Shortcut(string Icon, string Title, string Description, string Href);
-
-    private sealed class Stat(string tint, string icon, string label, string href, Func<Task<int?>> load)
-    {
-        public string Tint { get; } = tint;
-        public string Icon { get; } = icon;
-        public string Label { get; } = label;
-        public string Href { get; } = href;
-        public Func<Task<int?>> Load { get; } = load;
-        public bool Loading { get; set; } = true;
-        public int? Value { get; set; }
-        public string? Error { get; set; }
-    }
+    private sealed record Card(string Tint, string Icon, string Label, string Href, string Value, string? Caption);
 }

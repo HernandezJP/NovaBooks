@@ -3,7 +3,6 @@
 @using TikalLibros.Application.DTOs.Reports
 @using TikalLibros.Web.Services.Reports
 @inject ReportsApi ReportsApi
-@inject IJSRuntime JS
 
 <PageTitle>Rentabilidad | Tikal Libros</PageTitle>
 
@@ -11,10 +10,7 @@
             Description="Ingreso sin IVA, costo de salida (PEPS) y margen de lo vendido en el período, descontando devoluciones."
             Breadcrumbs="_breadcrumbs">
     <Actions>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Download"
-                   Disabled="_report is null" OnClick="ExportAsync">
-            Exportar CSV
-        </MudButton>
+        <ExportActions Build="BuildExportAsync" Disabled="_report is null" />
     </Actions>
 </PageHeader>
 
@@ -45,6 +41,16 @@ else
         <StatCard Tint="mint" Icon="@Icons.Material.Outlined.TrendingUp" Label="Margen bruto" Value="@Money(_report.Margin)"
                   Caption="@(_report.MarginPercent is { } percent ? $"{percent:0.##} % del ingreso" : null)" />
     </div>
+
+    <Panel Title="Ingreso, costo y margen por categoría" Icon="@Icons.Material.Outlined.BarChart">
+        <TlChart Type="ChartType.Bar" AriaLabel="Ingreso neto, costo y margen por categoría" EmptyMessage="No hay ventas en el período."
+                 Labels="@_report.ByCategory.Select(row => row.Name).ToList()"
+                 Series="@([
+                     new TlChart.ChartLine("Ingreso neto", _report.ByCategory.Select(row => row.Revenue).ToList()),
+                     new TlChart.ChartLine("Costo", _report.ByCategory.Select(row => row.Cost).ToList()),
+                     new TlChart.ChartLine("Margen", _report.ByCategory.Select(row => row.Margin).ToList())
+                 ])" />
+    </Panel>
 
     <div class="layout-split">
         <Panel Title="Por categoría" Icon="@Icons.Material.Outlined.Category">@ProfitTable(_report.ByCategory, false)</Panel>
@@ -91,14 +97,13 @@ else
         _error = result.Succeeded ? null : result.Message;
     }
 
-    private async Task ExportAsync()
-    {
-        string csv = CsvExport.Build(
-            ["Código", "Libro", "Unidades", "Ingreso neto", "Costo", "Margen", "Margen %"],
-            _report!.ByBook.Select(row => new object?[] { row.Code, row.Name, row.Units, row.Revenue, row.Cost, row.Margin, row.MarginPercent }));
-
-        await CsvExport.DownloadAsync(JS, $"rentabilidad-{_report.From:yyyyMMdd}-{_report.To:yyyyMMdd}.csv", csv);
-    }
+    private Task<ExportTable?> BuildExportAsync() => Task.FromResult<ExportTable?>(new ExportTable(
+        $"rentabilidad-{_report!.From:yyyyMMdd}-{_report.To:yyyyMMdd}", "Rentabilidad por libro", $"Del {_report.From:dd/MM/yyyy} al {_report.To:dd/MM/yyyy}",
+        [
+            new("Código"), new("Libro"), new("Unidades", ExportKind.Number), new("Ingreso neto", ExportKind.Money),
+            new("Costo", ExportKind.Money), new("Margen", ExportKind.Money), new("Margen %", ExportKind.Percent)
+        ],
+        _report.ByBook.Select(row => new object?[] { row.Code, row.Name, row.Units, row.Revenue, row.Cost, row.Margin, row.MarginPercent }).ToList()));
 
     private static RenderFragment ProfitTable(IReadOnlyCollection<ProfitRow> rows, bool withCode) => __builder =>
     {

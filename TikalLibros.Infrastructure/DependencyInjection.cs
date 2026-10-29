@@ -162,6 +162,10 @@ public static class DependencyInjection
 
         services.AddScoped<IReportService, ReportService>();
 
+        services.AddScoped<IDashboardService, DashboardService>();
+
+        services.AddScoped<IAlertService, AlertService>();
+
         services.AddScoped<PurchaseOrderService>();
 
         services.AddScoped<IPurchaseOrderService>(provider => provider.GetRequiredService<PurchaseOrderService>());
