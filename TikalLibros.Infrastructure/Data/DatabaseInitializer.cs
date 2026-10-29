@@ -28,6 +28,7 @@ public sealed class DatabaseInitializer
     private readonly ILogger<DatabaseInitializer> _logger;
     private readonly DemoOperationsSeeder _demoOperations;
     private readonly DemoSalesSeeder _demoSales;
+    private readonly DemoFinalSeeder _demoFinal;
     private readonly InvoiceService _invoices;
 
     public DatabaseInitializer(
@@ -40,10 +41,12 @@ public sealed class DatabaseInitializer
         ILogger<DatabaseInitializer> logger,
         DemoOperationsSeeder demoOperations,
         DemoSalesSeeder demoSales,
+        DemoFinalSeeder demoFinal,
         InvoiceService invoices)
     {
         _demoOperations = demoOperations;
         _demoSales = demoSales;
+        _demoFinal = demoFinal;
         _invoices = invoices;
 
         _context = context;
@@ -202,6 +205,11 @@ public sealed class DatabaseInitializer
                 "Cargando datos de demostración de pedidos, ventas y caja.");
 
             await _demoSales.SeedAsync(cancellationToken);
+
+            _logger.LogInformation(
+                "Cargando datos de demostración de la entrega final (sucursal, traslados y devoluciones).");
+
+            await _demoFinal.SeedAsync(cancellationToken);
         }
 
         // Ventas registradas antes de la facturación electrónica.

@@ -182,6 +182,8 @@ public static class DependencyInjection
 
         services.AddScoped<DemoSalesSeeder>();
 
+        services.AddScoped<DemoFinalSeeder>();
+
 
 
 
