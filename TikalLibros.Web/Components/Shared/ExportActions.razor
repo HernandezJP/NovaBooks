@@ -1,0 +1,94 @@
+@* Botones de exportación de una lista o reporte: CSV, Excel e impresión (que
+   también permite guardar como PDF desde el navegador). No usa menú
+   desplegable para que funcione igual en cualquier navegador. *@
+@using TikalLibros.Web.Services.Reports
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<div class="export-actions no-print" role="group" aria-label="Exportar">
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Description"
+               Disabled="@(Disabled || _busy)" OnClick="() => ExportAsync(Format.Csv)" aria-label="Exportar a CSV">
+        CSV
+    </MudButton>
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.GridOn"
+               Disabled="@(Disabled || _busy)" OnClick="() => ExportAsync(Format.Excel)" aria-label="Exportar a Excel">
+        @(_busy ? "Generando…" : "Excel")
+    </MudButton>
+    @if (ShowPrint)
+    {
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Outlined.Print"
+                   Disabled="@(Disabled || _busy)" OnClick="PrintAsync" aria-label="Imprimir o guardar como PDF">
+            Imprimir / PDF
+        </MudButton>
+    }
+</div>
+
+@code {
+    private enum Format { Csv, Excel }
+
+    /// <summary>Arma la tabla a exportar (puede consultar todas las páginas de una lista).</summary>
+    [Parameter, EditorRequired]
+    public Func<Task<ExportTable?>> Build { get; set; } = default!;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public bool ShowPrint { get; set; } = true;
+
+    private bool _busy;
+
+    private async Task ExportAsync(Format format)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            ExportTable? table = await Build();
+
+            if (table is null)
+            {
+                return;
+            }
+
+            if (table.Rows.Count == 0)
+            {
+                Snackbar.Add("No hay datos para exportar con los filtros actuales.", Severity.Info);
+                return;
+            }
+
+            if (format == Format.Excel)
+            {
+                await TableExport.DownloadExcelAsync(JS, table);
+            }
+            else
+            {
+                await TableExport.DownloadCsvAsync(JS, table);
+            }
+
+            if (table.Rows.Count >= ExportTable.MaxRows)
+            {
+                Snackbar.Add($"Se exportaron las primeras {ExportTable.MaxRows:N0} filas. Use los filtros para acotar el resultado.", Severity.Warning);
+            }
+        }
+        catch (ExportFailedException exception)
+        {
+            Snackbar.Add($"No fue posible exportar: {exception.Message}", Severity.Error);
+        }
+        catch (JSDisconnectedException)
+        {
+            // El usuario cerró la página mientras se generaba el archivo.
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+}

@@ -1,0 +1,71 @@
+@* Detalle de un registro de auditoría: datos de la solicitud y campos cambiados. *@
+@using TikalLibros.Application.DTOs.Audit
+@inject AuditApi AuditApi
+
+<MudDialog>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <ErrorState Title="No fue posible cargar el registro" Message="@_error" />
+        }
+        else if (_entry is null)
+        {
+            <LoadingState Rows="4" />
+        }
+        else
+        {
+            <dl class="detail-list">
+                <dt>Fecha</dt>
+                <dd>@_entry.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</dd>
+                <dt>Usuario</dt>
+                <dd>@(_entry.UserName ?? "—") @(_entry.Employee is null ? "" : $"· {_entry.Employee}")</dd>
+                <dt>Acción</dt>
+                <dd>@_entry.Action · @_entry.Entity @(_entry.EntityId is null ? "" : $"#{_entry.EntityId}")</dd>
+                <dt>Descripción</dt>
+                <dd><p class="notes-block">@_entry.Description</p></dd>
+                <dt>Solicitud</dt>
+                <dd>@_entry.HttpMethod @_entry.Path</dd>
+                <dt>IP</dt>
+                <dd>@(_entry.IpAddress ?? "—")</dd>
+                <dt>Navegador</dt>
+                <dd class="cell-secondary">@(_entry.UserAgent ?? "—")</dd>
+                <dt>Correlación</dt>
+                <dd class="cell-secondary">@_entry.CorrelationId</dd>
+            </dl>
+
+            @if (_entry.Changes.Count > 0)
+            {
+                <MudSimpleTable Dense="true" Elevation="0" Class="tl-table audit-changes mt-3">
+                    <thead><tr><th>Campo</th><th>Antes</th><th>Después</th></tr></thead>
+                    <tbody>
+                        @foreach (AuditChangeResponse change in _entry.Changes)
+                        {
+                            <tr><td>@change.Field</td><td>@(change.Before ?? "—")</td><td>@(change.After ?? "—")</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public long EntryId { get; set; }
+
+    private AuditDetailResponse? _entry;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApiResult<AuditDetailResponse> result = await AuditApi.GetAsync(EntryId);
+        _entry = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+}

@@ -1,0 +1,161 @@
+@page "/reportes/libros-mas-vendidos"
+@attribute [RequirePermission(AppPermissions.ReportsSales)]
+@using TikalLibros.Application.DTOs.Reports
+@using TikalLibros.Web.Services.Reports
+@inject ReportsApi ReportsApi
+
+<PageTitle>Libros más vendidos | Tikal Libros</PageTitle>
+
+<PageHeader Title="Libros más vendidos"
+            Description="Ranking del período por unidades o por ingresos. El costo y el margen solo se muestran con permiso de costos."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        <ExportActions Build="BuildExportAsync" Disabled="@(_report is not { Rows.Count: > 0 })" />
+    </Actions>
+</PageHeader>
+
+<div class="panel">
+    <div class="list-toolbar">
+        <div class="list-toolbar__range">
+            <MudDateRangePicker DateRange="_range" DateRangeChanged="value => ChangeAsync(() => _range = value ?? DefaultRange)" Label="Período"
+                                MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+        <MudSelect T="int" Value="_top" ValueChanged="value => ChangeAsync(() => _top = value)" Label="Mostrar"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            @foreach (int option in new[] { 10, 20, 50, 100 })
+            {
+                <MudSelectItem T="int" Value="option">Top @option</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="string" Value="_orderBy" ValueChanged="value => ChangeAsync(() => _orderBy = value)" Label="Ordenar por"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem T="string" Value="@("units")">Unidades</MudSelectItem>
+            <MudSelectItem T="string" Value="@("revenue")">Ingresos</MudSelectItem>
+        </MudSelect>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible generar el reporte" Message="@_error" OnRetry="LoadAsync" /></div>
+}
+else if (_report is null)
+{
+    <div class="panel"><LoadingState Rows="6" /></div>
+}
+else
+{
+    <div class="stat-grid">
+        <StatCard Tint="sky" Icon="@Icons.Material.Outlined.MenuBook" Label="Unidades vendidas" Value="@_report.TotalUnits.ToString("N0")" />
+        <StatCard Tint="mint" Icon="@Icons.Material.Outlined.Payments" Label="Ingresos" Value="@($"Q {_report.TotalRevenue:N2}")" />
+    </div>
+
+    <Panel Title="Ranking" Icon="@Icons.Material.Outlined.Leaderboard"
+           Subtitle="@($"Del {_report.From:dd/MM/yyyy} al {_report.To:dd/MM/yyyy}")">
+        @if (_report.Rows.Count == 0)
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.Leaderboard" Title="Sin ventas" Message="No se vendieron libros en el período." />
+        }
+        else
+        {
+            <div class="table-scroll">
+                <MudTable Items="_report.Rows" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>#</MudTh>
+                        <MudTh>Libro</MudTh>
+                        <MudTh Class="text-right">Unidades</MudTh>
+                        <MudTh Class="text-right col-optional">Ventas</MudTh>
+                        <MudTh Class="text-right">Ingresos</MudTh>
+                        @if (_report.IncludesCosts)
+                        {
+                            <MudTh Class="text-right col-optional">Costo</MudTh>
+                            <MudTh Class="text-right">Margen</MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Rank</MudTd>
+                        <MudTd>
+                            <div class="cell-primary">@context.Title</div>
+                            <div class="cell-secondary">@context.BookCode</div>
+                        </MudTd>
+                        <MudTd Class="number">@context.Units.ToString("N0")</MudTd>
+                        <MudTd Class="number col-optional">@context.SalesCount</MudTd>
+                        <MudTd Class="number">@context.Revenue.ToString("N2")</MudTd>
+                        @if (_report.IncludesCosts)
+                        {
+                            <MudTd Class="number col-optional">@context.Cost?.ToString("N2")</MudTd>
+                            <MudTd Class="@($"number {(context.Margin < 0 ? "qty-out" : "")}")">
+                                @context.Margin?.ToString("N2")
+                                <div class="cell-secondary">@(context.MarginPercent is { } percent ? $"{percent:0.##} %" : "")</div>
+                            </MudTd>
+                        }
+                    </RowTemplate>
+                </MudTable>
+            </div>
+            @if (_report.IncludesCosts)
+            {
+                <p class="form-hint">Margen = ingreso sin IVA − costo de salida (PEPS).</p>
+            }
+        }
+    </Panel>
+}
+
+@code {
+    private static DateRange DefaultRange => new(DateTime.Today.AddDays(-29), DateTime.Today);
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Reportes", null, disabled: true),
+        new("Libros más vendidos", null, disabled: true)
+    ];
+
+    private DateRange _range = DefaultRange;
+    private int _top = 10;
+    private string _orderBy = "units";
+    private TopBooksResponse? _report;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task ChangeAsync(Action change)
+    {
+        change();
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        ApiResult<TopBooksResponse> result = await ReportsApi.GetTopBooksAsync(new TopBooksQuery
+        {
+            From = _range.Start is { } start ? DateOnly.FromDateTime(start) : null,
+            To = _range.End is { } end ? DateOnly.FromDateTime(end) : null,
+            Top = _top,
+            OrderBy = _orderBy
+        });
+
+        _report = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+
+    private Task<ExportTable?> BuildExportAsync()
+    {
+        List<ExportColumn> columns =
+        [
+            new("Puesto", ExportKind.Number), new("Código"), new("Título"), new("Unidades", ExportKind.Number),
+            new("Ventas", ExportKind.Number), new("Descuento", ExportKind.Money), new("Ingresos", ExportKind.Money)
+        ];
+
+        if (_report!.IncludesCosts)
+        {
+            columns.AddRange([new("Costo", ExportKind.Money), new("Margen", ExportKind.Money), new("Margen %", ExportKind.Percent)]);
+        }
+
+        return Task.FromResult<ExportTable?>(new ExportTable(
+            $"libros-mas-vendidos-{_report.From:yyyyMMdd}-{_report.To:yyyyMMdd}", "Libros más vendidos", $"Del {_report.From:dd/MM/yyyy} al {_report.To:dd/MM/yyyy}", columns,
+            _report.Rows.Select(row => _report.IncludesCosts
+                ? new object?[] { row.Rank, row.BookCode, row.Title, row.Units, row.SalesCount, row.Discount, row.Revenue, row.Cost, row.Margin, row.MarginPercent }
+                : new object?[] { row.Rank, row.BookCode, row.Title, row.Units, row.SalesCount, row.Discount, row.Revenue }).ToList()));
+    }
+}

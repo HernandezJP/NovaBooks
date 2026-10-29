@@ -1,0 +1,145 @@
+@page "/configuracion/parametros"
+@attribute [RequirePermission(AppPermissions.ConfigurationParameters)]
+@using TikalLibros.Application.DTOs.Configuration
+@inject ParametersApi ParametersApi
+@inject ISnackbar Snackbar
+
+<PageTitle>Parámetros | Tikal Libros</PageTitle>
+
+<PageHeader Title="Parámetros del sistema"
+            Description="Descuentos y reserva de pedidos. Cada cambio queda en la auditoría con el valor anterior y el nuevo."
+            Breadcrumbs="_breadcrumbs" />
+
+<Panel Title="Parámetros" Icon="@Icons.Material.Outlined.SettingsSuggest">
+    @if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar los parámetros" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_rows is null)
+    {
+        <LoadingState Rows="3" />
+    }
+    else
+    {
+        <div class="layout-stack">
+            @foreach (ParameterRow row in _rows)
+            {
+                <div class="form-section" @key="row.Parameter.Key">
+                    <div class="form-section__title">@Label(row.Parameter.Key)</div>
+                    <p class="form-hint">@row.Parameter.Description</p>
+                    <div class="list-toolbar mt-2">
+                        @if (row.IsText)
+                        {
+                            <MudTextField T="string" @bind-Value="row.Text" Label="NIT" MaxLength="20" Immediate="true"
+                                          Disabled="@(!row.Parameter.IsEditable || row.Saving)" Error="@(row.Error is not null)" ErrorText="@row.Error"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="list-toolbar__filter tl-filter-nit" />
+                        }
+                        else
+                        {
+                            <MudNumericField T="decimal?" @bind-Value="row.Value" Label="@Unit(row.Parameter.DataType)"
+                                             Min="0m" Max="@(row.Parameter.DataType == "INTEGER" ? 365m : 100m)" Format="@(row.Parameter.DataType == "INTEGER" ? "N0" : "0.##")" HideSpinButtons="true"
+                                             Disabled="@(!row.Parameter.IsEditable || row.Saving)" Error="@(row.Error is not null)" ErrorText="@row.Error"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Class="list-toolbar__filter" />
+                        }
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                                   Disabled="@(!row.Changed || row.Saving)" OnClick="() => SaveAsync(row)">
+                            @(row.Saving ? "Guardando…" : "Guardar")
+                        </MudButton>
+                        @if (row.Parameter.ModifiedAt is { } modified)
+                        {
+                            <span class="form-hint">Modificado el @modified.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</Panel>
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Configuración", null, disabled: true),
+        new("Parámetros", null, disabled: true)
+    ];
+
+    private List<ParameterRow>? _rows;
+    private string? _error;
+
+    private static string Label(string key) => key switch
+    {
+        "VENTAS_DESCUENTO_SIN_APROBACION" => "Descuento sin aprobación",
+        "VENTAS_DESCUENTO_MAXIMO" => "Descuento máximo",
+        "PEDIDOS_DIAS_RESERVA" => "Días de reserva de pedidos",
+        "VENTAS_DIAS_DEVOLUCION" => "Días para devoluciones de clientes",
+        "FACTURA_NIT_EMISOR" => "NIT del emisor de facturas",
+        _ => key
+    };
+
+    // Los parámetros enteros son días; los decimales, porcentajes.
+    private static string Unit(string dataType) => dataType == "INTEGER" ? "Días" : "Porcentaje (%)";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        ApiResult<List<SystemParameterResponse>> result = await ParametersApi.GetAllAsync();
+
+        if (!result.Succeeded)
+        {
+            _error = result.Message;
+            return;
+        }
+
+        _rows = result.Data!.Select(parameter => new ParameterRow(parameter)).ToList();
+    }
+
+    private async Task SaveAsync(ParameterRow row)
+    {
+        row.Saving = true;
+        row.Error = null;
+        ApiResult<SystemParameterResponse> result = await ParametersApi.UpdateAsync(
+            row.Parameter.Key,
+            row.IsText ? row.Text?.Trim() ?? string.Empty : row.Value?.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty);
+        row.Saving = false;
+
+        if (result.Succeeded)
+        {
+            row.Parameter = result.Data!;
+            row.Value = row.Original;
+            row.Text = row.Parameter.Value;
+            Snackbar.Add($"{Label(row.Parameter.Key)} actualizado a {row.Parameter.Value}.", Severity.Success);
+        }
+        else
+        {
+            row.Error = result.Message;
+        }
+    }
+
+    private sealed class ParameterRow(SystemParameterResponse parameter)
+    {
+        public SystemParameterResponse Parameter { get; set; } = parameter;
+
+        public decimal? Value { get; set; } = Parse(parameter.Value);
+
+        public decimal? Original => Parse(Parameter.Value);
+
+        /// <summary>Parámetro de texto (el NIT del emisor).</summary>
+        public bool IsText => Parameter.DataType == "STRING";
+
+        public string? Text { get; set; } = parameter.Value;
+
+        public bool Changed => IsText ? Text?.Trim() != Parameter.Value : Value != Original;
+
+        public bool Saving { get; set; }
+
+        public string? Error { get; set; }
+
+        private static decimal? Parse(string value) =>
+            decimal.TryParse(value, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out decimal number)
+                ? number
+                : null;
+    }
+}

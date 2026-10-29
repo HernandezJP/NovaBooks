@@ -1,0 +1,133 @@
+@page "/"
+@using TikalLibros.Application.DTOs.Reports
+@inject SessionState Session
+@inject DashboardApi DashboardApi
+
+<PageTitle>Inicio | Tikal Libros</PageTitle>
+
+<PageHeader Title="@($"{Greeting()}, {Session.User?.UserName}")"
+            Description="Lo más importante del día según sus permisos." />
+
+@if (_error is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar los indicadores" Message="@_error" OnRetry="LoadAsync" /></div>
+}
+else if (_dashboard is null)
+{
+    <div class="panel"><LoadingState Rows="3" /></div>
+}
+else
+{
+    @if (_cards.Count > 0)
+    {
+        <div class="stat-grid">
+            @foreach (Card card in _cards)
+            {
+                <StatCard Tint="@card.Tint" Icon="@card.Icon" Label="@card.Label" Href="@card.Href" Value="@card.Value" Caption="@card.Caption" />
+            }
+        </div>
+    }
+
+    @if (_dashboard.Sales is { } sales)
+    {
+        <div class="layout-half layout-half--stretch">
+            <Panel Title="Ventas de los últimos 30 días" Icon="@Icons.Material.Outlined.ShowChart" Subtitle="Total vendido por día, sin anuladas.">
+                <TlChart Type="ChartType.Line" AriaLabel="Ventas por día de los últimos 30 días" Height="300px"
+                         Labels="@sales.Last30Days.Select(day => day.Date.ToString("dd/MM")).ToList()"
+                         Series="@([new TlChart.ChartLine("Ventas", sales.Last30Days.Select(day => day.Total).ToList())])" />
+            </Panel>
+            <Panel Title="Cobros del mes por método" Icon="@Icons.Material.Outlined.DonutLarge">
+                <TlChart Type="ChartType.Donut" AriaLabel="Cobros del mes por método de pago" EmptyMessage="Aún no hay cobros este mes." Height="300px"
+                         Labels="@sales.PaymentMethods.Select(row => row.Name).ToList()"
+                         Series="@([new TlChart.ChartLine("Cobros", sales.PaymentMethods.Select(row => row.Total).ToList())])" />
+            </Panel>
+        </div>
+    }
+}
+
+@code {
+    /// <summary>Tarjetas como máximo: se muestran las de mayor prioridad que el usuario puede ver.</summary>
+    private const int MaxCards = 4;
+
+    private List<Card> _cards = [];
+    private DashboardResponse? _dashboard;
+    private string? _error;
+
+    private static string Money(decimal value) => $"Q {value:N2}";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        ApiResult<DashboardResponse> result = await DashboardApi.GetAsync();
+        _dashboard = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+        _cards = _dashboard is null ? [] : Cards(_dashboard).Take(MaxCards).ToList();
+    }
+
+    /// <summary>Indicadores en orden de prioridad: primero lo que se mira o atiende a diario.</summary>
+    private IEnumerable<Card> Cards(DashboardResponse data)
+    {
+        if (data.Sales is { } sales)
+        {
+            yield return new Card("mint", Icons.Material.Outlined.ReceiptLong, "Ventas de hoy", "/ventas",
+                Money(sales.TodayTotal), $"{sales.TodayCount} venta(s)");
+
+            yield return new Card("sky", Icons.Material.Outlined.CalendarMonth, "Ventas del mes", "/reportes/ventas",
+                Money(sales.MonthTotal),
+                sales.MonthChangePercent is { } change
+                    ? $"{(change >= 0 ? "Sube" : "Baja")} {Math.Abs(change):0.#} % frente al mismo tramo del mes anterior"
+                    : $"{sales.MonthCount} venta(s) · ticket promedio {Money(sales.AverageTicket)}");
+        }
+
+        if (data.Receivables is { } receivables)
+        {
+            yield return new Card("peach", Icons.Material.Outlined.AccountBalanceWallet, "Por cobrar", "/reportes/cuentas-por-cobrar",
+                Money(receivables.Total), $"Vencido {Money(receivables.Overdue)}");
+        }
+
+        if (data.Orders is { } orders)
+        {
+            yield return Session.HasPermission(AppPermissions.OrdersApprove)
+                ? new Card("peach", Icons.Material.Outlined.FactCheck, "Pedidos por aprobar", "/pedidos/aprobaciones",
+                    orders.PendingApproval.ToString("N0"), $"{orders.Reserved} reservado(s) · {orders.ExpiringSoon} vence(n) en 24 h")
+                : new Card("peach", Icons.Material.Outlined.Assignment, "Pedidos reservados", "/pedidos",
+                    orders.Reserved.ToString("N0"), $"{orders.ExpiringSoon} vence(n) en 24 h");
+        }
+
+        if (data.Cash is { } cash)
+        {
+            yield return new Card("sky", Icons.Material.Outlined.PointOfSale, "Caja de hoy (neto)", "/caja/aperturas",
+                Money(cash.TodayIncome - cash.TodayExpense), $"{cash.OpenSessions} caja(s) abierta(s)");
+        }
+
+        if (data.Inventory is { } inventory)
+        {
+            yield return new Card("sand", Icons.Material.Outlined.NotificationImportant, "Alertas de inventario", "/inventario/alertas",
+                (inventory.OutOfStock + inventory.BelowMinimum).ToString("N0"),
+                $"{inventory.OutOfStock} agotado(s) · {inventory.BelowMinimum} bajo el mínimo");
+        }
+
+        if (data.Purchases is { } purchases)
+        {
+            yield return new Card("sand", Icons.Material.Outlined.LocalShipping, "Compras por recibir", "/compras",
+                Money(purchases.PendingAmount), $"{purchases.PendingOrders} orden(es)");
+        }
+
+        if (data.Profit is { } profit)
+        {
+            yield return new Card("mint", Icons.Material.Outlined.TrendingUp, "Margen bruto del mes", "/reportes/rentabilidad",
+                Money(profit.Margin), profit.MarginPercent is { } percent ? $"{percent:0.#} % del ingreso sin IVA" : "sin ventas en el mes");
+        }
+    }
+
+    private static string Greeting() => DateTime.Now.Hour switch
+    {
+        < 12 => "Buenos días",
+        < 19 => "Buenas tardes",
+        _ => "Buenas noches"
+    };
+
+    private sealed record Card(string Tint, string Icon, string Label, string Href, string Value, string? Caption);
+}

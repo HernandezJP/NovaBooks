@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
+    <PackageReference Include="MudBlazor" Version="9.10.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Solo contratos (DTO); la Web consume la API por HTTP. -->
+    <ProjectReference Include="..\TikalLibros.Application\TikalLibros.Application.csproj" />
+  </ItemGroup>
+
+</Project>

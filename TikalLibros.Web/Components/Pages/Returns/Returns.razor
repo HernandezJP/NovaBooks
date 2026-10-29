@@ -1,0 +1,163 @@
+@page "/devoluciones"
+@attribute [RequirePermission(AppPermissions.SalesReturn)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Sales
+@using TikalLibros.Web.Services.Reports
+@inject ReturnsApi ReturnsApi
+@inject NavigationManager Navigation
+
+<PageTitle>Devoluciones | Tikal Libros</PageTitle>
+
+<PageHeader Title="Devoluciones de clientes"
+            Description="Notas de crédito sobre ventas: abonan al saldo pendiente o se reembolsan por caja."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        <ExportActions Build="BuildExportAsync" />
+        <MudButton Href="/devoluciones/nueva" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.AssignmentReturn">
+            Nueva devolución
+        </MudButton>
+    </Actions>
+</PageHeader>
+
+<Panel Title="Devoluciones" Subtitle="Busque por número de devolución o de venta, o por cliente." Icon="@Icons.Material.Outlined.AssignmentReturn">
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_query.Search" Placeholder="Número o cliente"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="_ => ReloadAsync()"
+                      OnClearButtonClick="_ => ReloadAsync()" MaxLength="100"
+                      aria-label="Buscar devoluciones" Class="list-toolbar__search tl-filter-plain" />
+        <MudSwitch T="bool" Value="_query.IncludeAnnulled" ValueChanged="AnnulledChangedAsync" Color="Color.Primary" Label="Incluir anuladas" />
+    </div>
+
+    @if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar las devoluciones" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is null)
+    {
+        <LoadingState />
+    }
+    else if (_page.Items.Count == 0)
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.AssignmentReturn" Title="Sin devoluciones"
+                    Message="Registre una devolución desde el detalle de la venta o con el botón Nueva devolución." />
+    }
+    else
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table tl-table--clickable"
+                      OnRowClick="@((TableRowClickEventArgs<ReturnListItemResponse> args) => Navigation.NavigateTo($"/devoluciones/{args.Item!.Id}"))">
+                <HeaderContent>
+                    <MudTh>Devolución</MudTh>
+                    <MudTh>Venta</MudTh>
+                    <MudTh>Cliente</MudTh>
+                    <MudTh Class="text-right">Unidades</MudTh>
+                    <MudTh Class="text-right">Total</MudTh>
+                    <MudTh Class="text-right col-optional">Abonado</MudTh>
+                    <MudTh Class="text-right col-optional">Reembolsado</MudTh>
+                    <MudTh>Estado</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.Number</div>
+                        <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @context.Employee</div>
+                    </MudTd>
+                    <MudTd>@context.SaleNumber</MudTd>
+                    <MudTd>@context.Customer</MudTd>
+                    <MudTd Class="number">@context.Units.ToString("N0")</MudTd>
+                    <MudTd Class="number">@context.Total.ToString("N2")</MudTd>
+                    <MudTd Class="number col-optional">@context.CreditApplied.ToString("N2")</MudTd>
+                    <MudTd Class="number col-optional">@context.Refunded.ToString("N2")</MudTd>
+                    <MudTd>
+                        <DocumentStatus Code="@(context.Annulled ? "ANULADA" : "PROCESADA")" Text="@(context.Annulled ? "Anulada" : "Procesada")" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                   TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+</Panel>
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Devoluciones", null, disabled: true)
+    ];
+
+    private readonly ReturnQuery _query = new();
+    private PagedResponse<ReturnListItemResponse>? _page;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+        _error = null;
+
+        ApiResult<PagedResponse<ReturnListItemResponse>> result = await ReturnsApi.GetPagedAsync(_query, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _page = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+
+    private Task ReloadAsync()
+    {
+        _query.Page = 1;
+        return LoadAsync();
+    }
+
+    private Task AnnulledChangedAsync(bool include)
+    {
+        _query.IncludeAnnulled = include;
+        return ReloadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _query.Page = page;
+        return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        ReturnQuery query = PagedExport.Copy(_query);
+        List<ReturnListItemResponse> returns = await PagedExport.AllAsync((page, size) =>
+        {
+            query.Page = page;
+            query.PageSize = size;
+            return ReturnsApi.GetPagedAsync(query);
+        });
+
+        return new ExportTable($"devoluciones-{DateTime.Today:yyyyMMdd}", "Devoluciones de clientes", "Según los filtros de la pantalla",
+            [
+                new("Devolución"), new("Fecha", ExportKind.DateTime), new("Venta"), new("Cliente"), new("Unidades", ExportKind.Number),
+                new("Total", ExportKind.Money), new("Abonado al saldo", ExportKind.Money), new("Reembolsado", ExportKind.Money),
+                new("Registró"), new("Anulada")
+            ],
+            returns.Select(item => new object?[]
+            {
+                item.Number, item.Date, item.SaleNumber, item.Customer, item.Units, item.Total,
+                item.CreditApplied, item.Refunded, item.Employee, item.Annulled
+            }).ToList());
+    }
+}

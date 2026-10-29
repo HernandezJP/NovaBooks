@@ -1,0 +1,136 @@
+@page "/compras/devoluciones"
+@attribute [RequirePermission(AppPermissions.PurchasesReturn)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Purchasing
+@inject SupplierReturnsApi SupplierReturnsApi
+@inject NavigationManager Navigation
+
+<PageTitle>Devoluciones a proveedor | Tikal Libros</PageTitle>
+
+<PageHeader Title="Devoluciones a proveedor"
+            Description="Mercadería devuelta al proveedor sobre lo recibido; el valor al costo es lo que el proveedor debe acreditar."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        <MudButton Href="/compras/devoluciones/nueva" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Outbox">
+            Nueva devolución
+        </MudButton>
+    </Actions>
+</PageHeader>
+
+<Panel Title="Devoluciones" Subtitle="Busque por número, recepción, orden de compra o proveedor." Icon="@Icons.Material.Outlined.Outbox">
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_query.Search" Placeholder="Número o proveedor"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="_ => ReloadAsync()"
+                      OnClearButtonClick="_ => ReloadAsync()" MaxLength="100"
+                      aria-label="Buscar devoluciones a proveedor" Class="list-toolbar__search tl-filter-plain" />
+        <MudSwitch T="bool" Value="_query.IncludeAnnulled" ValueChanged="AnnulledChangedAsync" Color="Color.Primary" Label="Incluir anuladas" />
+    </div>
+
+    @if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar las devoluciones" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is null)
+    {
+        <LoadingState />
+    }
+    else if (_page.Items.Count == 0)
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.Outbox" Title="Sin devoluciones a proveedor"
+                    Message="Registre una desde el detalle de la recepción o con el botón Nueva devolución." />
+    }
+    else
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table tl-table--clickable"
+                      OnRowClick="@((TableRowClickEventArgs<SupplierReturnListItemResponse> args) => Navigation.NavigateTo($"/compras/devoluciones/{args.Item!.Id}"))">
+                <HeaderContent>
+                    <MudTh>Devolución</MudTh>
+                    <MudTh>Proveedor</MudTh>
+                    <MudTh>Recepción</MudTh>
+                    <MudTh Class="col-optional">Almacén</MudTh>
+                    <MudTh Class="text-right">Unidades</MudTh>
+                    <MudTh Class="text-right">Valor</MudTh>
+                    <MudTh>Estado</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.Number</div>
+                        <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @context.Employee</div>
+                    </MudTd>
+                    <MudTd>@context.Supplier</MudTd>
+                    <MudTd>@context.ReceptionNumber</MudTd>
+                    <MudTd Class="col-optional">@context.Warehouse</MudTd>
+                    <MudTd Class="number">@context.Units.ToString("N0")</MudTd>
+                    <MudTd Class="number">@context.Total.ToString("N2")</MudTd>
+                    <MudTd>
+                        <DocumentStatus Code="@(context.Annulled ? "ANULADA" : "PROCESADA")" Text="@(context.Annulled ? "Anulada" : "Procesada")" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                   TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+</Panel>
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Devoluciones a proveedor", null, disabled: true)
+    ];
+
+    private readonly SupplierReturnQuery _query = new();
+    private PagedResponse<SupplierReturnListItemResponse>? _page;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+        _error = null;
+
+        ApiResult<PagedResponse<SupplierReturnListItemResponse>> result = await SupplierReturnsApi.GetPagedAsync(_query, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _page = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+
+    private Task ReloadAsync()
+    {
+        _query.Page = 1;
+        return LoadAsync();
+    }
+
+    private Task AnnulledChangedAsync(bool include)
+    {
+        _query.IncludeAnnulled = include;
+        return ReloadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _query.Page = page;
+        return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

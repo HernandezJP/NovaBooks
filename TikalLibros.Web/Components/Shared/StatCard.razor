@@ -1,0 +1,70 @@
+@* Indicador con fondo de color suave e ícono circular. Solo muestra datos
+   reales; si no se pudieron obtener, muestra un guion con el motivo. *@
+
+@if (Href is not null)
+{
+    <a href="@Href" class="@CssClass">@Content</a>
+}
+else
+{
+    <div class="@CssClass">@Content</div>
+}
+
+@code {
+    /// <summary>peach, mint, sky o sand.</summary>
+    [Parameter]
+    public string Tint { get; set; } = "peach";
+
+    [Parameter, EditorRequired]
+    public string Icon { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Value { get; set; }
+
+    [Parameter]
+    public string? Caption { get; set; }
+
+    [Parameter]
+    public bool Loading { get; set; }
+
+    [Parameter]
+    public string? Error { get; set; }
+
+    [Parameter]
+    public string? Href { get; set; }
+
+    private string CssClass => $"stat-card stat-card--{Tint}{(Href is null ? "" : " stat-card--link")}";
+
+    private RenderFragment Content => __builder =>
+    {
+        <span class="stat-card__icon" aria-hidden="true">
+            <MudIcon Icon="@Icon" />
+        </span>
+        <span class="stat-card__body">
+            <span class="stat-card__label">@Label</span>
+            @if (Loading)
+            {
+                <MudSkeleton Width="72px" Height="34px" />
+            }
+            else if (Value is not null)
+            {
+                <span class="stat-card__value">@Value</span>
+            }
+            else
+            {
+                <span class="stat-card__value stat-card__value--empty" title="@Error">—</span>
+            }
+            @if (!string.IsNullOrEmpty(Caption))
+            {
+                <span class="stat-card__caption">@Caption</span>
+            }
+        </span>
+        @if (Href is not null)
+        {
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Class="stat-card__chevron" />
+        }
+    };
+}

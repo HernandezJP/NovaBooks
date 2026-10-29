@@ -1,0 +1,74 @@
+@* Contenido del centro de alertas: cada alerta con ícono y título según su
+   severidad (no solo color), su conteo y el enlace a donde se atiende. *@
+@using TikalLibros.Application.DTOs.Reports
+@inject AlertState Alerts
+
+<div class="alert-center">
+    <div class="alert-center__header">
+        <div>
+            <h2 class="alert-center__title">Centro de alertas</h2>
+            <p class="alert-center__subtitle">
+                @(Alerts.Current is { } current ? $"Actualizado a las {current.GeneratedAt.ToLocalTime():HH:mm}" : "Cargando…")
+            </p>
+        </div>
+        <div class="alert-center__actions">
+            <MudIconButton Icon="@Icons.Material.Outlined.Refresh" Size="Size.Small" aria-label="Actualizar alertas"
+                           OnClick="() => Alerts.RefreshAsync(force: true)" />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" aria-label="Cerrar centro de alertas" OnClick="OnClose" />
+        </div>
+    </div>
+
+    @if (Alerts.ErrorMessage is not null && Alerts.Current is null)
+    {
+        <ErrorState Title="No fue posible cargar las alertas" Message="@Alerts.ErrorMessage" OnRetry="() => Alerts.RefreshAsync(force: true)" />
+    }
+    else if (Alerts.Current is null)
+    {
+        <LoadingState Rows="3" />
+    }
+    else if (Alerts.Current.Items.Count == 0)
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.TaskAlt" Title="Todo en orden" Message="No hay alertas que requieran su atención." />
+    }
+    else
+    {
+        <ul class="alert-center__list">
+            @foreach (AlertItem item in Alerts.Current.Items)
+            {
+                <li>
+                    <a href="@item.Href" class="@($"alert-item alert-item--{item.Severity}")" @onclick="OnClose">
+                        <span class="alert-item__icon" aria-hidden="true"><MudIcon Icon="@Icon(item.Severity)" Size="Size.Small" /></span>
+                        <span class="alert-item__body">
+                            <span class="alert-item__title">
+                                @item.Title
+                                <span class="alert-item__count" aria-label="@($"{item.Count} elementos")">@item.Count</span>
+                            </span>
+                            <span class="alert-item__severity">@Label(item.Severity)</span>
+                            <span class="alert-item__message">@item.Message</span>
+                        </span>
+                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Class="alert-item__chevron" />
+                    </a>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    private static string Icon(string severity) => severity switch
+    {
+        AlertSeverity.Critical => Icons.Material.Outlined.Error,
+        AlertSeverity.Warning => Icons.Material.Outlined.Warning,
+        _ => Icons.Material.Outlined.Info
+    };
+
+    private static string Label(string severity) => severity switch
+    {
+        AlertSeverity.Critical => "Crítica",
+        AlertSeverity.Warning => "Advertencia",
+        _ => "Informativa"
+    };
+}

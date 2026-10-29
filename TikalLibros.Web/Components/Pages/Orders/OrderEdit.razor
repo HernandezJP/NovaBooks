@@ -1,0 +1,515 @@
+@page "/pedidos/nuevo"
+@page "/pedidos/{Id:int}"
+@attribute [RequirePermission(AppPermissions.OrdersView)]
+@using System.ComponentModel.DataAnnotations
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Customers
+@using TikalLibros.Application.DTOs.Sales
+@using TikalLibros.Application.Validation
+@inject OrdersApi OrdersApi
+@inject SalesApi SalesApi
+@inject SessionState Session
+@inject NavigationManager Navigation
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>@TitleText | Tikal Libros</PageTitle>
+
+@if (Id is null && !Session.HasPermission(AppPermissions.OrdersCreate))
+{
+    <AccessDenied Permission="@AppPermissions.OrdersCreate" />
+}
+else
+{
+    <PageHeader Title="@TitleText" Breadcrumbs="_breadcrumbs" Description="@(_order?.Customer ?? "Cliente, libros y descuentos; al confirmar se valida y reserva la existencia.")">
+        <Actions>
+            @if (_order is not null)
+            {
+                <DocumentStatus Code="@_order.StatusCode" Text="@_order.Status" />
+            }
+        </Actions>
+    </PageHeader>
+
+    @if (_loadError is not null)
+    {
+        <div class="panel"><ErrorState Title="No fue posible cargar el pedido" Message="@_loadError" OnRetry="LoadAsync" /></div>
+    }
+    else if (_catalogs is null || (Id is not null && _order is null))
+    {
+        <div class="panel"><LoadingState Rows="6" /></div>
+    }
+    else
+    {
+        <div class="layout-stack">
+            @if (_order is { ApprovalReasons.Count: > 0 } && _order.StatusCode is OrderStatus.Draft or OrderStatus.PendingApproval)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true">
+                    <div class="form-alert__title">@(_order.StatusCode == OrderStatus.Draft ? "Al confirmarlo quedará por aprobar:" : "Espera la aprobación de un supervisor:")</div>
+                    <ul class="reason-list">
+                        @foreach (string reason in _order.ApprovalReasons)
+                        {
+                            <li>@reason</li>
+                        }
+                    </ul>
+                </MudAlert>
+            }
+
+            @if (Editable)
+            {
+                <EditForm Model="_header" OnValidSubmit="SubmitAsync" OnInvalidSubmit="OnInvalidSubmitAsync">
+                    <DataAnnotationsValidator />
+                    <div class="layout-stack">
+                        <div class="panel">
+                            <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                            <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+                            <fieldset disabled="@_saving" class="form-fieldset">
+                                <div class="form-section">
+                                    <div class="form-section__title">Cliente y condiciones</div>
+                                    <div class="form-grid">
+                                        <CustomerPicker Label="Cliente *" Value="_customer" ValueChanged="customer => _customer = customer"
+                                                        Error="@(_submitted && _customer is null)" ErrorText="Seleccione el cliente."
+                                                        HelperText="@CreditHelp" Disabled="_saving" />
+                                        <MudSelect T="string" @bind-Value="_header.SaleType" Label="Condición de pago *"
+                                                   Variant="Variant.Outlined" Margin="Margin.Dense">
+                                            <MudSelectItem T="string" Value="@SaleType.Cash">Contado</MudSelectItem>
+                                            <MudSelectItem T="string" Value="@SaleType.Credit" Disabled="!Session.HasPermission(AppPermissions.SalesSellOnCredit)">
+                                                Crédito
+                                            </MudSelectItem>
+                                        </MudSelect>
+                                        <MudSelect T="int?" @bind-Value="_header.PriceListId" Label="Lista de precios" Disabled="_lines.Count > 0"
+                                                   HelperText="@(_lines.Count > 0 ? "Quite los libros para cambiar la lista." : null)"
+                                                   Variant="Variant.Outlined" Margin="Margin.Dense">
+                                            @foreach (CatalogOptionResponse list in _catalogs.PriceLists)
+                                            {
+                                                <MudSelectItem T="int?" Value="list.Id">@list.Name</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                        <MudSelect T="int?" @bind-Value="_header.WarehouseId" Label="Almacén" Disabled="_lines.Count > 0"
+                                                   Variant="Variant.Outlined" Margin="Margin.Dense">
+                                            @foreach (CatalogOptionResponse warehouse in _catalogs.Warehouses)
+                                            {
+                                                <MudSelectItem T="int?" Value="warehouse.Id">@warehouse.Name</MudSelectItem>
+                                            }
+                                        </MudSelect>
+                                    </div>
+                                    <MudTextField @bind-Value="_header.Notes" For="@(() => _header.Notes)" Label="Observaciones"
+                                                  Lines="2" Counter="1000" MaxLength="1000" Class="mt-3 tl-filter-plain"
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                </div>
+                            </fieldset>
+                        </div>
+
+                        <Panel Title="Libros" Icon="@Icons.Material.Outlined.MenuBook"
+                               Subtitle="@($"Precios con IVA incluido. Descuentos de hasta {_catalogs.DiscountWithoutApproval:0.##} % sin aprobación; máximo {_catalogs.MaximumDiscount:0.##} %.")">
+                            <SaleLinesEditor Lines="_lines" LinesChanged="StateHasChanged"
+                                             PriceListId="_header.PriceListId" WarehouseId="_header.WarehouseId"
+                                             DiscountWithoutApproval="_catalogs.DiscountWithoutApproval" MaximumDiscount="_catalogs.MaximumDiscount"
+                                             CanDiscount="Session.HasPermission(AppPermissions.SalesApplyDiscount)"
+                                             Submitted="_submitted" Disabled="_saving" />
+
+                            <div class="form-actions">
+                                <MudButton Href="@(Id is null ? "/pedidos" : $"/pedidos/{Id}")" Variant="Variant.Text" Disabled="_saving"
+                                           OnClick="ReloadAsync">
+                                    @(Id is null ? "Cancelar" : "Descartar cambios")
+                                </MudButton>
+                                @if (_order is not null && _order.CanCancel && Session.HasPermission(AppPermissions.OrdersCancel))
+                                {
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Cancel"
+                                               OnClick="CancelOrderAsync" Disabled="_saving">
+                                        Cancelar pedido
+                                    </MudButton>
+                                }
+                                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.Save" Disabled="_saving" OnClick="() => _confirm = false">
+                                    Guardar borrador
+                                </MudButton>
+                                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Outlined.Inventory" Disabled="_saving" OnClick="() => _confirm = true">
+                                    @(_saving ? "Guardando…" : "Guardar y confirmar")
+                                </MudButton>
+                            </div>
+                        </Panel>
+                    </div>
+                </EditForm>
+            }
+            else
+            {
+                <div class="panel">
+                    <dl class="detail-list">
+                        <dt>Cliente</dt>
+                        <dd>@_order!.Customer · @_order.CustomerCode @(_order.CustomerNit is null ? "" : $"· NIT {_order.CustomerNit}")</dd>
+                        <dt>Condición</dt>
+                        <dd>
+                            @_order.SaleType
+                            @if (_order.SaleTypeCode == SaleType.Credit)
+                            {
+                                <span class="cell-secondary">· crédito usado Q @_order.CustomerCreditUsed.ToString("N2") de Q @_order.CustomerCreditLimit.ToString("N2")</span>
+                            }
+                        </dd>
+                        <dt>Registrado</dt>
+                        <dd>@_order.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @_order.Employee</dd>
+                        <dt>Almacén</dt>
+                        <dd>@_order.Warehouse</dd>
+                        @if (_order.ReservationExpiresAt is { } expires && _order.StatusCode == OrderStatus.Reserved)
+                        {
+                            <dt>Reserva hasta</dt>
+                            <dd>@expires.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+                        }
+                        @if (_order.ApprovedBy is not null)
+                        {
+                            <dt>@(_order.StatusCode == OrderStatus.Rejected ? "Rechazado por" : "Aprobado por")</dt>
+                            <dd>@_order.ApprovedBy · @_order.ApprovedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                @if (!string.IsNullOrWhiteSpace(_order.ApprovalComment))
+                                {
+                                    <p class="notes-block">@_order.ApprovalComment</p>
+                                }
+                            </dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_order.CancellationReason))
+                        {
+                            <dt>Motivo de cancelación</dt>
+                            <dd><p class="notes-block">@_order.CancellationReason</p></dd>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_order.Notes))
+                        {
+                            <dt>Observaciones</dt>
+                            <dd><p class="notes-block">@_order.Notes</p></dd>
+                        }
+                    </dl>
+
+                    <div class="form-actions">
+                        <MudButton Href="/pedidos" Variant="Variant.Text">Volver</MudButton>
+                        @if (_order.CanCancel && Session.HasPermission(AppPermissions.OrdersCancel))
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Cancel"
+                                       OnClick="CancelOrderAsync" Disabled="_saving">
+                                Cancelar pedido
+                            </MudButton>
+                        }
+                        @if (_order.CanApprove)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.ThumbDown"
+                                       OnClick="RejectAsync" Disabled="_saving">
+                                Rechazar
+                            </MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.ThumbUp"
+                                       OnClick="ApproveAsync" Disabled="_saving">
+                                Aprobar
+                            </MudButton>
+                        }
+                        else if (_order.StatusCode == OrderStatus.PendingApproval && Session.HasPermission(AppPermissions.OrdersApprove))
+                        {
+                            <span class="form-hint">Usted registró este pedido; debe aprobarlo otro supervisor.</span>
+                        }
+                        @if (_order.CanInvoice && Session.HasPermission(AppPermissions.SalesCreate))
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.ReceiptLong"
+                                       OnClick="InvoiceAsync" Disabled="_saving">
+                                Facturar
+                            </MudButton>
+                        }
+                    </div>
+                </div>
+
+                <Panel Title="Libros" Icon="@Icons.Material.Outlined.MenuBook" Subtitle="Precios con IVA incluido.">
+                    <div class="table-scroll">
+                        <MudTable Items="_order.Lines" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table">
+                            <HeaderContent>
+                                <MudTh>Libro</MudTh>
+                                <MudTh Class="text-right">Cantidad</MudTh>
+                                <MudTh Class="text-right col-optional">Reservado</MudTh>
+                                <MudTh Class="text-right">Precio</MudTh>
+                                <MudTh Class="text-right col-optional">Desc.</MudTh>
+                                <MudTh Class="text-right">Total</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>
+                                    <div class="cell-primary">@context.Title</div>
+                                    <div class="cell-secondary">@context.BookCode · @context.Available.ToString("N0") libre(s)</div>
+                                </MudTd>
+                                <MudTd Class="number">@context.Quantity.ToString("N0")</MudTd>
+                                <MudTd Class="number col-optional">@context.Reserved.ToString("N0")</MudTd>
+                                <MudTd Class="number">@context.UnitPrice.ToString("N2")</MudTd>
+                                <MudTd Class="number col-optional">@context.DiscountPercent.ToString("0.##") %</MudTd>
+                                <MudTd Class="number">@context.Total.ToString("N2")</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </div>
+                    <dl class="doc-totals">
+                        <dt>Subtotal</dt><dd>Q @_order.Subtotal.ToString("N2")</dd>
+                        <dt>Descuento</dt><dd>− Q @_order.Discount.ToString("N2")</dd>
+                        <dt>IVA incluido</dt><dd>Q @_order.Tax.ToString("N2")</dd>
+                        <dt class="doc-totals__grand">Total</dt><dd class="doc-totals__grand">Q @_order.Total.ToString("N2")</dd>
+                    </dl>
+                </Panel>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private OrderCatalogsResponse? _catalogs;
+    private OrderResponse? _order;
+    private CustomerListItemResponse? _customer;
+    private readonly HeaderModel _header = new();
+    private readonly List<SaleLineRow> _lines = [];
+    private bool _confirm;
+    private string? _loadError;
+    private bool _saving;
+    private bool _submitted;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+    private List<BreadcrumbItem> _breadcrumbs = [];
+
+    private bool Editable => Id is null || (_order?.CanEdit == true && Session.HasPermission(AppPermissions.OrdersUpdate));
+
+    private string TitleText => Id is null ? "Nuevo pedido" : _order is null ? "Pedido" : $"Pedido {_order.Number}";
+
+    private string? CreditHelp => _customer is null ? "Solo clientes activos."
+        : _customer.CreditLimit > 0 ? $"Crédito autorizado: Q {_customer.CreditLimit:N2} a {_customer.CreditDays} días."
+        : "Este cliente no tiene crédito autorizado.";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _breadcrumbs =
+        [
+            new("Inicio", "/"),
+            new("Pedidos", "/pedidos"),
+            new(Id is null ? "Nuevo" : "Detalle", null, disabled: true)
+        ];
+
+        await LoadAsync();
+    }
+
+    private Task ReloadAsync() => Id is null ? Task.CompletedTask : LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        Task<ApiResult<OrderCatalogsResponse>> catalogsTask = OrdersApi.GetCatalogsAsync();
+        ApiResult<OrderResponse>? order = Id is null ? null : await OrdersApi.GetAsync(Id.Value);
+        ApiResult<OrderCatalogsResponse> catalogs = await catalogsTask;
+
+        if (!catalogs.Succeeded)
+        {
+            _loadError = catalogs.Message;
+            return;
+        }
+
+        _catalogs = catalogs.Data!;
+        _header.PriceListId ??= _catalogs.DefaultPriceListId;
+        _header.WarehouseId ??= _catalogs.Warehouses.FirstOrDefault()?.Id;
+
+        if (order is null)
+        {
+            return;
+        }
+
+        if (!order.Succeeded || order.Data is null)
+        {
+            _loadError = order.Message;
+            return;
+        }
+
+        SetOrder(order.Data);
+    }
+
+    private void SetOrder(OrderResponse order)
+    {
+        _order = order;
+        _customer = new CustomerListItemResponse
+        {
+            Id = order.CustomerId,
+            Code = order.CustomerCode,
+            DisplayName = order.Customer,
+            Nit = order.CustomerNit,
+            CreditLimit = order.CustomerCreditLimit
+        };
+        _header.SaleType = order.SaleTypeCode;
+        _header.WarehouseId = order.WarehouseId;
+        _header.Notes = order.Notes;
+        _lines.Clear();
+        _lines.AddRange(order.Lines.Select(SaleLineRow.From));
+    }
+
+    private SaveOrderRequest BuildRequest() => new()
+    {
+        CustomerId = _customer?.Id,
+        SaleType = _header.SaleType,
+        PriceListId = _header.PriceListId,
+        WarehouseId = _header.WarehouseId,
+        Notes = _header.Notes,
+        Lines = _lines.Select(line => line.ToRequest()).ToList()
+    };
+
+    private async Task SubmitAsync()
+    {
+        _submitted = true;
+
+        if (_customer is null || _lines.Count == 0 || _lines.Any(line => line.Error(_catalogs!.MaximumDiscount) is not null))
+        {
+            await OnInvalidSubmitAsync();
+            return;
+        }
+
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<OrderResponse> saved = Id is null
+                ? await OrdersApi.CreateAsync(BuildRequest())
+                : await OrdersApi.UpdateAsync(Id.Value, BuildRequest());
+
+            if (!saved.Succeeded)
+            {
+                _saveResult = saved;
+                return;
+            }
+
+            if (!_confirm)
+            {
+                Snackbar.Add($"Pedido {saved.Data!.Number} guardado como borrador.", Severity.Success);
+                Navigation.NavigateTo($"/pedidos/{saved.Data.Id}");
+                SetOrder(saved.Data);
+                return;
+            }
+
+            ApiResult<OrderResponse> confirmed = await OrdersApi.ConfirmAsync(saved.Data!.Id);
+
+            if (!confirmed.Succeeded)
+            {
+                Snackbar.Add($"El pedido {saved.Data.Number} se guardó como borrador, pero no se pudo confirmar: {confirmed.Message}",
+                    Severity.Warning, options => options.VisibleStateDuration = 10000);
+                Navigation.NavigateTo($"/pedidos/{saved.Data.Id}");
+                SetOrder(saved.Data);
+                return;
+            }
+
+            Snackbar.Add(confirmed.Data!.StatusCode == OrderStatus.PendingApproval
+                ? $"Pedido {confirmed.Data.Number} confirmado: queda por aprobar."
+                : $"Pedido {confirmed.Data.Number} confirmado y mercadería reservada.", Severity.Success);
+            Navigation.NavigateTo($"/pedidos/{confirmed.Data.Id}");
+            SetOrder(confirmed.Data);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ApproveAsync()
+    {
+        string? comment = await Dialogs.AskReasonAsync(
+            $"Aprobar pedido {_order!.Number}",
+            "Se validará de nuevo la existencia y se reservará la mercadería. Indique el motivo de la aprobación.",
+            "Aprobar", "Comentario *");
+
+        if (comment is null)
+        {
+            return;
+        }
+
+        await RunAsync(OrdersApi.ApproveAsync(_order.Id, comment), "Pedido aprobado y mercadería reservada.");
+    }
+
+    private async Task RejectAsync()
+    {
+        string? reason = await Dialogs.AskReasonAsync(
+            $"Rechazar pedido {_order!.Number}",
+            "El pedido no se reservará. Quien lo registró puede corregirlo y confirmarlo de nuevo.",
+            "Rechazar");
+
+        if (reason is not null)
+        {
+            await RunAsync(OrdersApi.RejectAsync(_order.Id, reason), "Pedido rechazado.");
+        }
+    }
+
+    private async Task CancelOrderAsync()
+    {
+        string? reason = await Dialogs.AskReasonAsync(
+            $"Cancelar pedido {_order!.Number}",
+            "Si tenía mercadería reservada, se libera.",
+            "Cancelar pedido");
+
+        if (reason is not null)
+        {
+            await RunAsync(OrdersApi.CancelAsync(_order.Id, reason), "Pedido cancelado.");
+        }
+    }
+
+    private async Task RunAsync(Task<ApiResult<OrderResponse>> action, string message)
+    {
+        _saving = true;
+        ApiResult<OrderResponse> result = await action;
+        _saving = false;
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add(message, Severity.Success);
+            SetOrder(result.Data!);
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error, options => options.VisibleStateDuration = 10000);
+        }
+    }
+
+    private async Task InvoiceAsync()
+    {
+        ApiResult<SaleCatalogsResponse> catalogs = await SalesApi.GetCatalogsAsync();
+
+        if (!catalogs.Succeeded)
+        {
+            Snackbar.Add(catalogs.Message, Severity.Error);
+            return;
+        }
+
+        DialogParameters<InvoiceOrderDialog> parameters = new()
+        {
+            { dialog => dialog.Order, _order! },
+            { dialog => dialog.Methods, catalogs.Data!.PaymentMethods }
+        };
+
+        SaleResponse? sale = await Dialogs.ShowFormAsync<InvoiceOrderDialog, SaleResponse>($"Facturar pedido {_order!.Number}", parameters);
+
+        if (sale is not null)
+        {
+            Snackbar.Add($"Venta {sale.Number} registrada; el inventario se actualizó.", Severity.Success);
+            Navigation.NavigateTo($"/ventas/{sale.Id}");
+        }
+    }
+
+    private async Task OnInvalidSubmitAsync()
+    {
+        _submitted = true;
+        _showInvalid = true;
+        _saveResult = null;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("tikalLibros.scrollToFirstError");
+    }
+
+    private sealed class HeaderModel
+    {
+        public string SaleType { get; set; } = TikalLibros.Application.DTOs.Sales.SaleType.Cash;
+
+        public int? PriceListId { get; set; }
+
+        public int? WarehouseId { get; set; }
+
+        [StringLength(1000, ErrorMessage = "Las observaciones no pueden superar los 1000 caracteres.")]
+        [PlainText]
+        public string? Notes { get; set; }
+    }
+}

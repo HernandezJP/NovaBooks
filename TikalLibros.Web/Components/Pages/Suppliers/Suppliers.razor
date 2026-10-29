@@ -1,0 +1,306 @@
+@page "/proveedores"
+@attribute [RequirePermission(AppPermissions.SuppliersView)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Suppliers
+@using TikalLibros.Web.Services.Reports
+@inject SuppliersApi SuppliersApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Proveedores | Tikal Libros</PageTitle>
+
+<PageHeader Title="Proveedores"
+            Description="Distribuidoras y editoriales a las que se compran libros: NIT, contacto y condiciones de crédito."
+            Breadcrumbs="_breadcrumbs" />
+
+<div class="stat-grid">
+    <StatCard Tint="peach" Icon="@Icons.Material.Outlined.LocalShipping" Label="Proveedores activos"
+              Loading="_activeCount is null && _countError is null" Value="@_activeCount?.ToString("N0")" Error="@_countError" />
+    <StatCard Tint="sky" Icon="@Icons.Material.Outlined.Business" Label="Personas jurídicas activas"
+              Loading="_legalCount is null && _countError is null" Value="@_legalCount?.ToString("N0")" Error="@_countError" />
+    <StatCard Tint="sand" Icon="@Icons.Material.Outlined.Block" Label="Proveedores inactivos"
+              Loading="_inactiveCount is null && _countError is null" Value="@_inactiveCount?.ToString("N0")" Error="@_countError" />
+</div>
+
+<Panel Title="Proveedores" Subtitle="Busque por código, razón social, nombre, NIT o correo." Icon="@Icons.Material.Outlined.LocalShipping">
+    <Actions>
+        <ExportActions Build="BuildExportAsync" ShowPrint="false" />
+        @if (Session.HasPermission(AppPermissions.SuppliersCreate))
+        {
+            <MudButton Href="/proveedores/nuevo" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.AddBusiness">
+                Nuevo proveedor
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+        <div class="list-toolbar">
+            <MudTextField @bind-Value="_search"
+                          Placeholder="Buscar por código, razón social, nombre, NIT o correo"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          DebounceInterval="400" OnDebounceIntervalElapsed="SearchAsync"
+                          OnClearButtonClick="ClearSearchAsync" MaxLength="100"
+                          aria-label="Buscar proveedores" Class="list-toolbar__search tl-filter-plain" />
+
+            <MudSelect T="string" Value="_personType" ValueChanged="PersonTypeChangedAsync" Label="Tipo"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                <MudSelectItem T="string" Value="@string.Empty">Todos</MudSelectItem>
+                <MudSelectItem T="string" Value="@SaveSupplierRequest.LegalPerson">Persona jurídica</MudSelectItem>
+                <MudSelectItem T="string" Value="@SaveSupplierRequest.NaturalPerson">Persona individual</MudSelectItem>
+            </MudSelect>
+
+            <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                <MudSelectItem Value="StatusFilter.Active">Activos</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.Inactive">Inactivos</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.All">Todos</MudSelectItem>
+            </MudSelect>
+        </div>
+
+        @if (_loading && _page is null)
+        {
+            <LoadingState />
+        }
+        else if (_error is not null)
+        {
+            <ErrorState Title="No fue posible cargar los proveedores" Message="@_error" OnRetry="LoadAsync" />
+        }
+        else if (_page is { Items.Count: 0 })
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.LocalShipping" Title="No se encontraron proveedores"
+                        Message="@(HasFilters ? "Ajuste la búsqueda o los filtros." : "Registre el primer proveedor con el botón Nuevo proveedor.")" />
+        }
+        else if (_page is not null)
+        {
+            <div class="table-scroll">
+                <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading"
+                          Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>Proveedor</MudTh>
+                        <MudTh>NIT</MudTh>
+                        <MudTh Class="col-optional">Contacto</MudTh>
+                        <MudTh Class="col-optional text-right">Crédito</MudTh>
+                        <MudTh Class="text-right">Órdenes abiertas</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh Class="tl-table__actions">Acciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <EntityCell Title="@context.DisplayName"
+                                        Subtitle="@($"{context.Code}{(context.TradeName is null ? "" : " · " + context.TradeName)}")"
+                                        Icon="@(context.PersonType == SaveSupplierRequest.LegalPerson ? Icons.Material.Outlined.Business : null)"
+                                        Muted="!context.IsActive" />
+                        </MudTd>
+                        <MudTd Class="cell-nowrap">@context.Nit</MudTd>
+                        <MudTd Class="col-optional">
+                            <div class="cell-primary">@(context.Phone ?? "—")</div>
+                            <div class="cell-secondary">@context.Email</div>
+                        </MudTd>
+                        <MudTd Class="col-optional number">
+                            @(context.CreditLimit > 0 ? $"Q {context.CreditLimit:N2} · {context.CreditDays} días" : "Contado")
+                        </MudTd>
+                        <MudTd Class="number">@context.OpenOrders</MudTd>
+                        <MudTd><StatusChip IsActive="context.IsActive" /></MudTd>
+                        <MudTd Class="tl-table__actions">
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                     AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                     aria-label="@($"Más acciones para {context.DisplayName}")">
+                                <MudMenuItem Icon="@(CanEdit ? Icons.Material.Outlined.Edit : Icons.Material.Outlined.Visibility)"
+                                             Href="@($"/proveedores/{context.Id}")">
+                                    @(CanEdit ? "Editar" : "Ver ficha")
+                                </MudMenuItem>
+                                @if (Session.HasPermission(AppPermissions.PurchasesView))
+                                {
+                                    <MudMenuItem Icon="@Icons.Material.Outlined.ShoppingCart"
+                                                 Href="@($"/compras?proveedor={context.Id}")">
+                                        Ver órdenes de compra
+                                    </MudMenuItem>
+                                }
+                                @if (Session.HasPermission(AppPermissions.SuppliersDisable))
+                                {
+                                    <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                 OnClick="() => ToggleStatusAsync(context)">
+                                        @(context.IsActive ? "Desactivar" : "Reactivar")
+                                    </MudMenuItem>
+                                }
+                            </MudMenu>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+
+            <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                       TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+        }
+    </ChildContent>
+</Panel>
+
+@code {
+    private const int PageSize = 10;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Personas", null, disabled: true),
+        new("Proveedores", null, disabled: true)
+    ];
+
+    private PagedResponse<SupplierListItemResponse>? _page;
+    private string? _search;
+    private string _personType = string.Empty;
+    private StatusFilter _status = StatusFilter.Active;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    private int? _activeCount;
+    private int? _legalCount;
+    private int? _inactiveCount;
+    private string? _countError;
+
+    private bool CanEdit => Session.HasPermission(AppPermissions.SuppliersUpdate);
+
+    private bool HasFilters =>
+        !string.IsNullOrWhiteSpace(_search) || _personType.Length > 0 || _status != StatusFilter.Active;
+
+    protected override Task OnInitializedAsync() => Task.WhenAll(LoadAsync(), LoadCountsAsync());
+
+    private async Task LoadCountsAsync()
+    {
+        var active = SuppliersApi.GetPagedAsync(null, StatusFilter.Active, null, 1, 1);
+        var legal = SuppliersApi.GetPagedAsync(null, StatusFilter.Active, SaveSupplierRequest.LegalPerson, 1, 1);
+        var inactive = SuppliersApi.GetPagedAsync(null, StatusFilter.Inactive, null, 1, 1);
+        await Task.WhenAll(active, legal, inactive);
+
+        _countError = active.Result.Succeeded ? null : active.Result.Message;
+        _activeCount = active.Result.Data?.TotalItems;
+        _legalCount = legal.Result.Data?.TotalItems;
+        _inactiveCount = inactive.Result.Data?.TotalItems;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<SupplierListItemResponse>> result =
+            await SuppliersApi.GetPagedAsync(_search, _status, _personType, _pageNumber, PageSize, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private Task SearchAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PersonTypeChangedAsync(string value)
+    {
+        _personType = value;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    private async Task ToggleStatusAsync(SupplierListItemResponse supplier)
+    {
+        bool activate = !supplier.IsActive;
+
+        if (!activate && supplier.OpenOrders > 0)
+        {
+            Snackbar.Add(
+                $"{supplier.DisplayName} tiene {supplier.OpenOrders} orden(es) de compra abiertas. Recíbalas o cancélelas antes de desactivarlo.",
+                Severity.Warning);
+            return;
+        }
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Reactivar proveedor" : "Desactivar proveedor",
+            activate
+                ? $"¿Desea reactivar a {supplier.DisplayName}?"
+                : $"¿Desea desactivar a {supplier.DisplayName}? No podrá recibir nuevas órdenes de compra; su historial se conserva.",
+            activate ? "Reactivar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<SupplierResponse> result = await SuppliersApi.ChangeStatusAsync(supplier.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Proveedor {supplier.DisplayName} {(activate ? "reactivado" : "desactivado")}.", Severity.Success);
+            await Task.WhenAll(LoadAsync(), LoadCountsAsync());
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        List<SupplierListItemResponse> suppliers = await PagedExport.AllAsync((page, size) =>
+            SuppliersApi.GetPagedAsync(_search, _status, _personType, page, size));
+
+        return new ExportTable($"proveedores-{DateTime.Today:yyyyMMdd}", "Proveedores", "Según los filtros de la pantalla",
+            [
+                new("Código"), new("Razón social o nombre"), new("Nombre comercial"), new("Tipo"), new("NIT"), new("Correo"), new("Teléfono"),
+                new("Límite de crédito", ExportKind.Money), new("Días de crédito", ExportKind.Number), new("Órdenes abiertas", ExportKind.Number), new("Activo")
+            ],
+            suppliers.Select(x => new object?[]
+            {
+                x.Code, x.DisplayName, x.TradeName, x.PersonType == "JURIDICA" ? "Jurídica" : "Natural", x.Nit, x.Email, x.Phone, x.CreditLimit, x.CreditDays, x.OpenOrders, x.IsActive
+            }).ToList());
+    }
+}

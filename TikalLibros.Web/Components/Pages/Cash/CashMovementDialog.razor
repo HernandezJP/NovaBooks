@@ -1,0 +1,87 @@
+@* Ingreso o egreso manual de efectivo en la caja abierta. *@
+@using TikalLibros.Application.DTOs.Cash
+@inject CashApi CashApi
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" id="cash-movement-form">
+            <DataAnnotationsValidator />
+            <FormErrors Result="_result" />
+            @if (Nature < 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                    Hay Q @Available.ToString("N2") en efectivo; el egreso no puede ser mayor.
+                </MudAlert>
+            }
+            <div class="form-grid">
+                <MudSelect T="string" @bind-Value="_model.TypeCode" For="@(() => _model.TypeCode)" Label="Tipo *"
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (CashMovementTypeResponse type in Types.Where(type => Math.Sign(type.Nature) == Math.Sign(Nature)))
+                    {
+                        <MudSelectItem T="string" Value="type.Code">@type.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudNumericField T="decimal?" @bind-Value="_model.Amount" For="@(() => _model.Amount)" Label="Monto (Q) *"
+                                 Min="0.01m" Max="100000m" Format="N2" HideSpinButtons="true"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </div>
+            <MudTextField @bind-Value="_model.Concept" For="@(() => _model.Concept)" Label="Concepto *"
+                          HelperText="Para qué es el movimiento (mínimo 5 caracteres)."
+                          MaxLength="300" Counter="300" Class="mt-3 tl-filter-plain"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+            <MudTextField @bind-Value="_model.Reference" For="@(() => _model.Reference)" Label="Referencia"
+                          HelperText="Número de recibo o comprobante (letras sin tilde, números y guion)."
+                          MaxLength="50" Class="mt-3 tl-filter-series"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Volver</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" form="cash-movement-form" Disabled="_saving">
+            @(_saving ? "Registrando…" : "Registrar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public int SessionId { get; set; }
+
+    /// <summary>1 ingreso, -1 egreso.</summary>
+    [Parameter]
+    public int Nature { get; set; } = 1;
+
+    [Parameter]
+    public decimal Available { get; set; }
+
+    [Parameter]
+    public IReadOnlyCollection<CashMovementTypeResponse> Types { get; set; } = [];
+
+    private readonly CashMovementRequest _model = new();
+    private IApiResultView? _result;
+    private bool _saving;
+
+    protected override void OnInitialized()
+    {
+        _model.TypeCode = Types.FirstOrDefault(type => Math.Sign(type.Nature) == Math.Sign(Nature))?.Code ?? string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        ApiResult<CashSessionResponse> result = await CashApi.RegisterMovementAsync(SessionId, _model);
+        _saving = false;
+
+        if (result.Succeeded)
+        {
+            Dialog.Close(DialogResult.Ok(result.Data!));
+        }
+        else
+        {
+            _result = result;
+        }
+    }
+}

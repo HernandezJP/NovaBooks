@@ -1,0 +1,124 @@
+@page "/reportes/pedidos-pendientes"
+@attribute [RequirePermission(AppPermissions.ReportsSales)]
+@using TikalLibros.Application.DTOs.Reports
+@using TikalLibros.Application.DTOs.Sales
+@using TikalLibros.Web.Services.Reports
+@inject ReportsApi ReportsApi
+@inject NavigationManager Navigation
+
+<PageTitle>Pedidos pendientes | Tikal Libros</PageTitle>
+
+<PageHeader Title="Pedidos pendientes"
+            Description="Pedidos por aprobar, reservados sin facturar y borradores, con su antigüedad. Primero lo que espera una decisión."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Refresh" OnClick="LoadAsync">
+            Actualizar
+        </MudButton>
+        <ExportActions Build="BuildExportAsync" Disabled="@(_report is not { Rows.Count: > 0 })" />
+    </Actions>
+</PageHeader>
+
+@if (_error is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible generar el reporte" Message="@_error" OnRetry="LoadAsync" /></div>
+}
+else if (_report is null)
+{
+    <div class="panel"><LoadingState Rows="6" /></div>
+}
+else
+{
+    <div class="stat-grid">
+        @foreach (PendingOrdersSummary summary in _report.Summary)
+        {
+            <StatCard Tint="@Tint(summary.StatusCode)" Icon="@Icons.Material.Outlined.Assignment" Label="@summary.Status"
+                      Value="@summary.Count.ToString("N0")" Caption="@($"Q {summary.Total:N2}")" />
+        }
+        @if (_report.ExpiringSoon > 0)
+        {
+            <StatCard Tint="peach" Icon="@Icons.Material.Outlined.AlarmOn" Label="Reservas por vencer (24 h)" Value="@_report.ExpiringSoon.ToString("N0")" />
+        }
+    </div>
+
+    <Panel Title="Pedidos" Icon="@Icons.Material.Outlined.PendingActions"
+           Subtitle="@($"Generado el {_report.GeneratedAt.ToLocalTime():dd/MM/yyyy HH:mm}")">
+        @if (_report.Rows.Count == 0)
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.TaskAlt" Title="Nada pendiente" Message="No hay pedidos por aprobar, reservados ni en borrador." />
+        }
+        else
+        {
+            <div class="table-scroll">
+                <MudTable Items="_report.Rows" Hover="true" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table tl-table--clickable"
+                          OnRowClick="@((TableRowClickEventArgs<PendingOrderRow> args) => Navigation.NavigateTo($"/pedidos/{args.Item!.Id}"))">
+                    <HeaderContent>
+                        <MudTh>Pedido</MudTh>
+                        <MudTh>Cliente</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh Class="text-right">Antigüedad</MudTh>
+                        <MudTh Class="col-optional">Vendedor</MudTh>
+                        <MudTh Class="text-right">Total</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary">@context.Number</div>
+                            <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM/yyyy") · @context.SaleType</div>
+                        </MudTd>
+                        <MudTd>@context.Customer</MudTd>
+                        <MudTd>
+                            <DocumentStatus Code="@context.StatusCode" Text="@context.Status" />
+                            @if (context.ReservationExpiresAt is { } expires && context.StatusCode == OrderStatus.Reserved)
+                            {
+                                <div class="@(context.ExpiresSoon ? "field-warning" : "cell-secondary")">vence @expires.ToLocalTime().ToString("dd/MM HH:mm")</div>
+                            }
+                        </MudTd>
+                        <MudTd Class="number">@(context.AgeDays == 0 ? "Hoy" : $"{context.AgeDays} día(s)")</MudTd>
+                        <MudTd Class="col-optional">@context.Employee</MudTd>
+                        <MudTd Class="number">@context.Total.ToString("N2")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        }
+    </Panel>
+}
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Reportes", null, disabled: true),
+        new("Pedidos pendientes", null, disabled: true)
+    ];
+
+    private PendingOrdersResponse? _report;
+    private string? _error;
+
+    private static string Tint(string status) => status switch
+    {
+        OrderStatus.PendingApproval => "peach",
+        OrderStatus.Reserved => "sky",
+        _ => "sand"
+    };
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        ApiResult<PendingOrdersResponse> result = await ReportsApi.GetPendingOrdersAsync();
+        _report = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+
+    private Task<ExportTable?> BuildExportAsync() => Task.FromResult<ExportTable?>(new ExportTable(
+        $"pedidos-pendientes-{DateTime.Today:yyyyMMdd}", "Pedidos pendientes", $"Al {DateTime.Now:dd/MM/yyyy HH:mm}",
+        [
+            new("Pedido"), new("Fecha", ExportKind.DateTime), new("Cliente"), new("Estado"), new("Condición"),
+            new("Antigüedad (días)", ExportKind.Number), new("Reserva vence", ExportKind.DateTime), new("Vendedor"), new("Total", ExportKind.Money)
+        ],
+        _report!.Rows.Select(row => new object?[]
+        {
+            row.Number, row.Date, row.Customer, row.Status, row.SaleType, row.AgeDays, row.ReservationExpiresAt, row.Employee, row.Total
+        }).ToList()));
+}

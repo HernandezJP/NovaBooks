@@ -1,0 +1,175 @@
+@page "/recepciones"
+@attribute [RequirePermission(AppPermissions.PurchasesView)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Purchasing
+@inject ReceptionsApi ReceptionsApi
+@inject SessionState Session
+@inject NavigationManager Navigation
+
+<PageTitle>Recepciones | Tikal Libros</PageTitle>
+
+<PageHeader Title="Recepciones"
+            Description="Mercadería recibida de los proveedores. Cada recepción ingresa los libros al inventario con su lote y costo."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        @if (Session.HasPermission(AppPermissions.PurchasesReceive))
+        {
+            <MudButton Href="/compras?estado=EMITIDA" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Outlined.MoveToInbox">
+                Recibir una orden
+            </MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+<Panel Title="Recepciones" Subtitle="Busque por número de recepción, orden, factura o proveedor." Icon="@Icons.Material.Outlined.MoveToInbox">
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_search" Placeholder="Recepción, orden, factura o proveedor"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="SearchAsync"
+                      OnClearButtonClick="ClearSearchAsync" MaxLength="100"
+                      aria-label="Buscar recepciones" Class="list-toolbar__search tl-filter-plain" />
+
+        <MudSelect T="string" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem T="string" Value="@string.Empty">Todas</MudSelectItem>
+            <MudSelectItem T="string" Value="@ReceptionStatus.Processed">Procesadas</MudSelectItem>
+            <MudSelectItem T="string" Value="@ReceptionStatus.Annulled">Anuladas</MudSelectItem>
+        </MudSelect>
+    </div>
+
+    @if (_loading && _page is null)
+    {
+        <LoadingState />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar las recepciones" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is { Items.Count: 0 })
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.Inbox" Title="No hay recepciones"
+                    Message="@(HasFilters ? "Ajuste la búsqueda o el filtro." : "Las recepciones se registran desde una orden emitida o con una compra directa.")" />
+    }
+    else if (_page is not null)
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading"
+                      Breakpoint="Breakpoint.None" Class="tl-table tl-table--clickable"
+                      OnRowClick="@((TableRowClickEventArgs<ReceptionListItemResponse> args) => Navigation.NavigateTo($"/recepciones/{args.Item!.Id}"))">
+                <HeaderContent>
+                    <MudTh>Recepción</MudTh>
+                    <MudTh>Orden / proveedor</MudTh>
+                    <MudTh Class="col-optional">Factura</MudTh>
+                    <MudTh Class="text-right">Aceptadas</MudTh>
+                    <MudTh Class="text-right col-optional">Rechazadas</MudTh>
+                    <MudTh>Estado</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.Number</div>
+                        <div class="cell-secondary">@context.ReceivedAt.ToLocalTime().ToString("dd/MM/yyyy") · @context.Warehouse</div>
+                    </MudTd>
+                    <MudTd>
+                        <div class="cell-primary">@context.PurchaseOrderNumber</div>
+                        <div class="cell-secondary">@context.SupplierName</div>
+                    </MudTd>
+                    <MudTd Class="col-optional cell-nowrap">@(context.SupplierDocument ?? "—")</MudTd>
+                    <MudTd Class="number">@context.AcceptedUnits.ToString("N0")</MudTd>
+                    <MudTd Class="number col-optional">@context.RejectedUnits.ToString("N0")</MudTd>
+                    <MudTd><DocumentStatus Code="@context.StatusCode" Text="@context.Status" /></MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                   TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+</Panel>
+
+@code {
+    private const int PageSize = 10;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Compras", null, disabled: true),
+        new("Recepciones", null, disabled: true)
+    ];
+
+    private PagedResponse<ReceptionListItemResponse>? _page;
+    private string? _search;
+    private string _status = string.Empty;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    private bool HasFilters => !string.IsNullOrWhiteSpace(_search) || _status.Length > 0;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<ReceptionListItemResponse>> result = await ReceptionsApi.GetPagedAsync(
+            new ReceptionQuery { Search = _search, Status = _status, Page = _pageNumber, PageSize = PageSize },
+            token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private Task SearchAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(string value)
+    {
+        _status = value;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

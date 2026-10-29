@@ -1,0 +1,234 @@
+@page "/inventario/movimientos"
+@attribute [RequirePermission(AppPermissions.InventoryViewMovements)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Inventory
+@using TikalLibros.Web.Services.Reports
+@inject InventoryApi InventoryApi
+@inject NavigationManager Navigation
+
+<PageTitle>Movimientos de inventario | Tikal Libros</PageTitle>
+
+<PageHeader Title="Movimientos de inventario"
+            Description="Entradas por compra, salidas y ajustes. Los movimientos anulados se conservan tachados."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        <ExportActions Build="BuildExportAsync" />
+        <MudButton Href="/inventario/kardex" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.ReceiptLong">
+            Kardex por libro
+        </MudButton>
+    </Actions>
+</PageHeader>
+
+<Panel Title="Movimientos" Subtitle="Busque por número, documento de referencia (orden, factura, ajuste) o empleado." Icon="@Icons.Material.Outlined.SwapVert">
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_search" Placeholder="Número, documento o empleado"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="ReloadAsync"
+                      OnClearButtonClick="ClearSearchAsync" MaxLength="100"
+                      aria-label="Buscar movimientos" Class="list-toolbar__search tl-filter-plain" />
+
+        <MudSelect T="string" Value="_type" ValueChanged="TypeChangedAsync" Label="Tipo"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem T="string" Value="@string.Empty">Todos</MudSelectItem>
+            @foreach (CatalogOptionResponse type in _types)
+            {
+                <MudSelectItem T="string" Value="type.Code">@type.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <div class="list-toolbar__range">
+            <MudDateRangePicker DateRange="_range" DateRangeChanged="RangeChangedAsync" Label="Fechas" Clearable="true"
+                                MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy"
+                                Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+    </div>
+
+    @if (_loading && _page is null)
+    {
+        <LoadingState />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar los movimientos" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is { Items.Count: 0 })
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.SwapVert" Title="Sin movimientos" Message="No hay movimientos con esos filtros." />
+    }
+    else if (_page is not null)
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading"
+                      Breakpoint="Breakpoint.None" Class="tl-table tl-table--clickable"
+                      RowClassFunc="@((MovementListItemResponse item, int _) => item.Annulled ? "row-muted" : string.Empty)"
+                      OnRowClick="@((TableRowClickEventArgs<MovementListItemResponse> args) => Navigation.NavigateTo($"/inventario/movimientos/{args.Item!.Id}"))">
+                <HeaderContent>
+                    <MudTh>Movimiento</MudTh>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh Class="col-optional">Documento</MudTh>
+                    <MudTh Class="text-right">Unidades</MudTh>
+                    <MudTh Class="col-optional">Registró</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.Number</div>
+                        <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @context.Warehouse</div>
+                    </MudTd>
+                    <MudTd>@context.Type @(context.Annulled ? "(anulado)" : "")</MudTd>
+                    <MudTd Class="col-optional">@(context.DocumentReference ?? "—")</MudTd>
+                    <MudTd Class="@($"number {(context.Nature > 0 ? "qty-in" : context.Nature < 0 ? "qty-out" : "")}")">
+                        @(context.Nature > 0 ? "+" : context.Nature < 0 ? "−" : "")@context.Units.ToString("N0")
+                    </MudTd>
+                    <MudTd Class="col-optional">
+                        @if (context.Employee is null)
+                        {
+                            <span>—</span>
+                        }
+                        else
+                        {
+                            <div>@context.Employee</div>
+                            <div class="cell-secondary">@context.EmployeeCode</div>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                   TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+</Panel>
+
+@code {
+    private const int PageSize = 15;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Inventario", null, disabled: true),
+        new("Movimientos", null, disabled: true)
+    ];
+
+    private PagedResponse<MovementListItemResponse>? _page;
+    private IReadOnlyCollection<CatalogOptionResponse> _types = [];
+    private string? _search;
+    private string _type = string.Empty;
+    private DateRange? _range;
+    private int _pageNumber = 1;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Task load = LoadAsync();
+        ApiResult<InventoryCatalogsResponse> catalogs = await InventoryApi.GetCatalogsAsync();
+        _types = catalogs.Data?.MovementTypes ?? [];
+        await load;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<PagedResponse<MovementListItemResponse>> result = await InventoryApi.GetMovementsAsync(
+            new MovementQuery
+            {
+                Search = _search,
+                Type = _type,
+                From = _range?.Start is { } start ? DateOnly.FromDateTime(start) : null,
+                To = _range?.End is { } end ? DateOnly.FromDateTime(end) : null,
+                Page = _pageNumber,
+                PageSize = PageSize
+            },
+            token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (result.Succeeded)
+        {
+            _page = result.Data;
+        }
+        else
+        {
+            _error = result.Message;
+        }
+
+        _loading = false;
+    }
+
+    private Task ReloadAsync(string? _)
+    {
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task TypeChangedAsync(string value)
+    {
+        _type = value;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task RangeChangedAsync(DateRange? range)
+    {
+        _range = range;
+        _pageNumber = 1;
+        return LoadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _pageNumber = page;
+        return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        List<MovementListItemResponse> movements = await PagedExport.AllAsync((page, size) => InventoryApi.GetMovementsAsync(
+            new MovementQuery
+            {
+                Search = _search,
+                Type = _type,
+                From = _range?.Start is { } start ? DateOnly.FromDateTime(start) : null,
+                To = _range?.End is { } end ? DateOnly.FromDateTime(end) : null,
+                Page = page,
+                PageSize = size
+            }));
+
+        return new ExportTable($"movimientos-{DateTime.Today:yyyyMMdd}", "Movimientos de inventario", "Según los filtros de la pantalla",
+            [
+                new("Movimiento"), new("Fecha", ExportKind.DateTime), new("Tipo"), new("Almacén"), new("Documento"),
+                new("Empleado"), new("Unidades", ExportKind.Number), new("Anulado")
+            ],
+            movements.Select(item => new object?[]
+            {
+                item.Number, item.Date, item.Type, item.Warehouse, item.DocumentReference, item.Employee,
+                item.Nature < 0 ? -item.Units : item.Units, item.Annulled
+            }).ToList());
+    }
+}

@@ -1,0 +1,158 @@
+@page "/inventario/traslados/{Id:int}"
+@attribute [RequirePermission(AppPermissions.InventoryTransfer)]
+@using TikalLibros.Application.DTOs.Inventory
+@inject InventoryApi InventoryApi
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_transfer?.Number ?? "Traslado") | Tikal Libros</PageTitle>
+
+<PageHeader Title="@($"Traslado {_transfer?.Number}")" Breadcrumbs="_breadcrumbs" Description="@_transfer?.DocumentReference">
+    <Actions>
+        @if (_transfer is not null)
+        {
+            <DocumentStatus Code="@(_transfer.Annulled ? "ANULADA" : "PROCESADA")" Text="@(_transfer.Annulled ? "Anulado" : "Procesado")" />
+            @if (!_transfer.Annulled)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Undo"
+                           OnClick="AnnulAsync" Disabled="_working">
+                    Anular traslado
+                </MudButton>
+            }
+        }
+    </Actions>
+</PageHeader>
+
+@if (_loadError is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar el traslado" Message="@_loadError" OnRetry="LoadAsync" /></div>
+}
+else if (_transfer is null)
+{
+    <div class="panel"><LoadingState Rows="5" /></div>
+}
+else
+{
+    <div class="layout-stack">
+        <div class="panel">
+            <dl class="detail-list">
+                <dt>Fecha</dt>
+                <dd>@_transfer.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</dd>
+                <dt>Origen</dt>
+                <dd>@_transfer.SourceWarehouse</dd>
+                <dt>Destino</dt>
+                <dd>@_transfer.TargetWarehouse</dd>
+                <dt>Registró</dt>
+                <dd>@(_transfer.Employee ?? "—")</dd>
+                @if (_transfer.Annulled)
+                {
+                    <dt>Anulación</dt>
+                    <dd>@_transfer.AnnulledAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @_transfer.AnnulmentReason</dd>
+                }
+                @if (!string.IsNullOrWhiteSpace(_transfer.Notes))
+                {
+                    <dt>Observaciones</dt>
+                    <dd><p class="notes-block">@_transfer.Notes</p></dd>
+                }
+            </dl>
+            <div class="form-actions">
+                <MudButton Href="/inventario/traslados" Variant="Variant.Text">Volver</MudButton>
+            </div>
+        </div>
+
+        <Panel Title="Libros trasladados" Subtitle="Una línea por cada lote retirado del origen." Icon="@Icons.Material.Outlined.MenuBook">
+            <div class="table-scroll">
+                <MudTable Items="_transfer.Lines" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>Libro</MudTh>
+                        <MudTh Class="col-optional">Lote</MudTh>
+                        <MudTh Class="text-right">Cantidad</MudTh>
+                        @if (ShowCosts)
+                        {
+                            <MudTh Class="text-right col-optional">Costo unit.</MudTh>
+                            <MudTh Class="text-right col-optional">Costo total</MudTh>
+                        }
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary"><a href="@($"/inventario/kardex?libro={context.BookId}")">@context.Title</a></div>
+                            <div class="cell-secondary">@context.BookCode</div>
+                        </MudTd>
+                        <MudTd Class="col-optional cell-nowrap">@(context.LotNumber ?? "Sin lote")</MudTd>
+                        <MudTd Class="number">@context.Quantity.ToString("N0")</MudTd>
+                        @if (ShowCosts)
+                        {
+                            <MudTd Class="number col-optional">Q @context.UnitCost?.ToString("N2")</MudTd>
+                            <MudTd Class="number col-optional">Q @context.TotalCost?.ToString("N2")</MudTd>
+                        }
+                    </RowTemplate>
+                    <FooterContent>
+                        <MudTd><b>Total</b></MudTd>
+                        <MudTd Class="col-optional"></MudTd>
+                        <MudTd Class="number"><b>@_transfer.Lines.Sum(line => line.Quantity).ToString("N0")</b></MudTd>
+                        @if (ShowCosts)
+                        {
+                            <MudTd Class="col-optional"></MudTd>
+                            <MudTd Class="number col-optional"><b>Q @_transfer.Lines.Sum(line => line.TotalCost ?? 0).ToString("N2")</b></MudTd>
+                        }
+                    </FooterContent>
+                </MudTable>
+            </div>
+        </Panel>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Traslados", "/inventario/traslados"),
+        new("Detalle", null, disabled: true)
+    ];
+
+    private MovementResponse? _transfer;
+    private string? _loadError;
+    private bool _working;
+
+    private bool ShowCosts => _transfer?.Lines.Any(line => line.UnitCost is not null) == true;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+        ApiResult<MovementResponse> result = await InventoryApi.GetTransferAsync(Id);
+        _transfer = result.Data;
+        _loadError = result.Succeeded ? null : result.Message;
+    }
+
+    private async Task AnnulAsync()
+    {
+        string? reason = await Dialogs.AskReasonAsync(
+            $"Anular traslado {_transfer!.Number}",
+            "Las unidades regresan al almacén de origen. Solo es posible si siguen libres en el destino.",
+            "Anular traslado");
+
+        if (reason is null)
+        {
+            return;
+        }
+
+        _working = true;
+        ApiResult<MovementResponse> result = await InventoryApi.AnnulTransferAsync(_transfer.Id, reason);
+        _working = false;
+
+        if (result.Succeeded)
+        {
+            _transfer = result.Data;
+            Snackbar.Add($"Traslado {_transfer!.Number} anulado; las unidades regresaron a {_transfer.SourceWarehouse}.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+}

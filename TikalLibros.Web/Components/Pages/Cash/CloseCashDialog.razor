@@ -1,0 +1,114 @@
+@* Cierre con arqueo: efectivo contado contra el esperado y, opcionalmente,
+   el conteo de vouchers y transferencias. Si no cuadra, exige explicación. *@
+@using TikalLibros.Application.DTOs.Cash
+@inject CashApi CashApi
+
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="SaveAsync" id="close-cash-form">
+            <DataAnnotationsValidator />
+            <FormErrors Result="_result" />
+
+            <dl class="payments__summary mb-3">
+                <div><dt>Monto inicial</dt><dd>Q @Session.InitialAmount.ToString("N2")</dd></div>
+                <div><dt>Ingresos en efectivo</dt><dd>Q @Session.CashIncome.ToString("N2")</dd></div>
+                <div><dt>Egresos en efectivo</dt><dd>Q @Session.CashExpense.ToString("N2")</dd></div>
+                <div><dt>Efectivo esperado</dt><dd>Q @Session.ExpectedCash.ToString("N2")</dd></div>
+            </dl>
+
+            <MudNumericField T="decimal?" @bind-Value="_model.CountedCash" For="@(() => _model.CountedCash)"
+                             Label="Efectivo contado (Q) *" Min="0m" Max="10000000m" Format="N2" HideSpinButtons="true" Immediate="true"
+                             HelperText="Cuente billetes y monedas de la gaveta."
+                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+
+            @if (Difference is { } difference && difference != 0)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                    @(difference > 0 ? $"Sobran Q {difference:N2}" : $"Faltan Q {-difference:N2}"): explique la diferencia en las observaciones.
+                </MudAlert>
+            }
+
+            @if (_otherMethods.Count > 0)
+            {
+                <div class="form-section mt-3">
+                    <div class="form-section__title">Otros métodos (opcional)</div>
+                    <p class="form-hint">Si no los cuenta, se toman como cuadrados con lo registrado.</p>
+                    <div class="form-grid">
+                        @foreach (CountRow row in _otherMethods)
+                        {
+                            <MudNumericField T="decimal?" @bind-Value="row.Counted"
+                                             Label="@($"{row.Name} (sistema Q {row.System:N2})")"
+                                             Min="0m" Max="10000000m" Format="N2" HideSpinButtons="true"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        }
+                    </div>
+                </div>
+            }
+
+            <MudTextField @bind-Value="_model.Notes" For="@(() => _model.Notes)" Label="Observaciones"
+                          Lines="2" MaxLength="1000" Counter="1000" Class="mt-3 tl-filter-plain"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Volver</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" form="close-cash-form" Disabled="_saving">
+            @(_saving ? "Cerrando…" : "Cerrar caja")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public CashSessionResponse Session { get; set; } = default!;
+
+    private readonly CloseCashSessionRequest _model = new();
+    private List<CountRow> _otherMethods = [];
+    private IApiResultView? _result;
+    private bool _saving;
+
+    private decimal? Difference => _model.CountedCash - Session.ExpectedCash;
+
+    protected override void OnInitialized()
+    {
+        _otherMethods = Session.Methods
+            .Where(method => !method.AffectsCash)
+            .Select(method => new CountRow(method.PaymentMethodId, method.Name, method.Net))
+            .ToList();
+    }
+
+    private async Task SaveAsync()
+    {
+        _model.Counts = _otherMethods
+            .Where(row => row.Counted is not null)
+            .Select(row => new CashCountRequest { PaymentMethodId = row.MethodId, Counted = row.Counted })
+            .ToList();
+
+        _saving = true;
+        ApiResult<CashSessionResponse> result = await CashApi.CloseAsync(Session.Id, _model);
+        _saving = false;
+
+        if (result.Succeeded)
+        {
+            Dialog.Close(DialogResult.Ok(result.Data!));
+        }
+        else
+        {
+            _result = result;
+        }
+    }
+
+    private sealed class CountRow(int methodId, string name, decimal system)
+    {
+        public int MethodId { get; } = methodId;
+
+        public string Name { get; } = name;
+
+        public decimal System { get; } = system;
+
+        public decimal? Counted { get; set; }
+    }
+}

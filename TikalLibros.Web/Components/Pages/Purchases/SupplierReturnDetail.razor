@@ -1,0 +1,154 @@
+@page "/compras/devoluciones/{Id:int}"
+@attribute [RequirePermission(AppPermissions.PurchasesReturn)]
+@using TikalLibros.Application.DTOs.Purchasing
+@inject SupplierReturnsApi SupplierReturnsApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>@(_entry?.Number ?? "Devolución a proveedor") | Tikal Libros</PageTitle>
+
+<div class="no-print">
+    <PageHeader Title="@($"Devolución a proveedor {_entry?.Number}")" Breadcrumbs="_breadcrumbs" Description="@_entry?.Supplier">
+        <Actions>
+            @if (_entry is not null)
+            {
+                <DocumentStatus Code="@(_entry.Annulled ? "ANULADA" : "PROCESADA")" Text="@(_entry.Annulled ? "Anulada" : "Procesada")" />
+            }
+        </Actions>
+    </PageHeader>
+</div>
+
+@if (_error is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar la devolución" Message="@_error" OnRetry="LoadAsync" /></div>
+}
+else if (_entry is null)
+{
+    <div class="panel"><LoadingState Rows="5" /></div>
+}
+else
+{
+    <div class="layout-stack">
+        @if (_entry.Annulled)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">
+                Anulada el @_entry.AnnulledAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm"): @_entry.AnnulmentReason. Las unidades regresaron al inventario.
+            </MudAlert>
+        }
+
+        <div class="panel">
+            <h2 class="print-only">Devolución a proveedor @_entry.Number</h2>
+            <dl class="detail-list">
+                <dt>Proveedor</dt>
+                <dd>@_entry.Supplier</dd>
+                <dt>Recepción</dt>
+                <dd>
+                    <a href="@($"/recepciones/{_entry.ReceptionId}")">@_entry.ReceptionNumber</a> · orden @_entry.PurchaseOrderNumber
+                    @(_entry.SupplierDocument is null ? "" : $" · documento del proveedor {_entry.SupplierDocument}")
+                </dd>
+                <dt>Fecha</dt>
+                <dd>@_entry.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @(_entry.Employee ?? "—")</dd>
+                <dt>Almacén</dt>
+                <dd>@_entry.Warehouse</dd>
+                <dt>Motivo</dt>
+                <dd><p class="notes-block">@_entry.Reason</p></dd>
+            </dl>
+            <div class="form-actions no-print">
+                <MudButton Href="/compras/devoluciones" Variant="Variant.Text">Volver</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Print" OnClick="PrintAsync">
+                    Imprimir o guardar PDF
+                </MudButton>
+                @if (!_entry.Annulled && Session.HasPermission(AppPermissions.PurchasesCancel))
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Block" OnClick="AnnulAsync" Disabled="_working">
+                        Anular devolución
+                    </MudButton>
+                }
+            </div>
+        </div>
+
+        <Panel Title="Libros devueltos" Icon="@Icons.Material.Outlined.MenuBook" Subtitle="Valor al costo de compra (sin IVA).">
+            <div class="table-scroll">
+                <MudTable Items="_entry.Lines" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>Libro</MudTh>
+                        <MudTh Class="col-optional">Lote</MudTh>
+                        <MudTh Class="text-right">Cantidad</MudTh>
+                        <MudTh Class="text-right">Costo unit.</MudTh>
+                        <MudTh Class="text-right">Total</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary">@context.Title</div>
+                            <div class="cell-secondary">@context.BookCode</div>
+                        </MudTd>
+                        <MudTd Class="col-optional cell-nowrap">@(context.LotNumber ?? "—")</MudTd>
+                        <MudTd Class="number">@context.Quantity.ToString("N0")</MudTd>
+                        <MudTd Class="number">@context.UnitCost.ToString("N2")</MudTd>
+                        <MudTd Class="number">@context.Total.ToString("N2")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+            <dl class="doc-totals">
+                <dt class="doc-totals__grand">Total a acreditar</dt><dd class="doc-totals__grand">Q @_entry.Total.ToString("N2")</dd>
+            </dl>
+        </Panel>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Devoluciones a proveedor", "/compras/devoluciones"),
+        new("Detalle", null, disabled: true)
+    ];
+
+    private SupplierReturnResponse? _entry;
+    private string? _error;
+    private bool _working;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        ApiResult<SupplierReturnResponse> result = await SupplierReturnsApi.GetAsync(Id);
+        _entry = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+
+    private async Task PrintAsync() => await JS.InvokeVoidAsync("print");
+
+    private async Task AnnulAsync()
+    {
+        string? reason = await Dialogs.AskReasonAsync(
+            $"Anular devolución {_entry!.Number}",
+            "Las unidades regresan a su lote en el almacén. Úselo si la devolución no se concretó o se registró por error.",
+            "Anular devolución");
+
+        if (reason is null)
+        {
+            return;
+        }
+
+        _working = true;
+        ApiResult<SupplierReturnResponse> result = await SupplierReturnsApi.AnnulAsync(_entry.Id, reason);
+        _working = false;
+
+        if (result.Succeeded)
+        {
+            _entry = result.Data;
+            Snackbar.Add($"Devolución {_entry!.Number} anulada.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+}

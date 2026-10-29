@@ -1,0 +1,41 @@
+@* Ilustración decorativa (SVG propio, sin dependencias externas). *@
+
+<svg class="@Class" viewBox="0 0 240 170" role="img" aria-hidden="true" focusable="false">
+    <!-- Planta -->
+    <g>
+        <path d="M168 96 C150 70 152 42 176 22 C180 50 178 74 168 96 Z" fill="#5E8C6A" />
+        <path d="M172 98 C178 66 198 48 226 44 C216 70 198 90 172 98 Z" fill="#4E7A5B" />
+        <path d="M166 100 C140 90 126 70 124 48 C148 56 162 76 166 100 Z" fill="#6E9B78" />
+        <path d="M170 98 C186 82 206 80 222 86 C206 98 188 102 170 98 Z" fill="#5E8C6A" />
+        <path d="M168 98 L170 22" stroke="#3F6B4C" stroke-width="2" fill="none" />
+        <path d="M152 100 h40 l-5 30 h-30 z" fill="#C9734E" />
+        <rect x="150" y="96" width="44" height="8" rx="2" fill="#B5603D" />
+    </g>
+
+    <!-- Libros verticales -->
+    <rect x="20" y="58" width="20" height="92" rx="2" fill="#B4532F" />
+    <rect x="23" y="70" width="14" height="3" fill="#E9C8A8" />
+    <rect x="23" y="132" width="14" height="3" fill="#E9C8A8" />
+    <rect x="42" y="46" width="18" height="104" rx="2" fill="#8E3F27" />
+    <rect x="45" y="60" width="12" height="3" fill="#E9C8A8" />
+    <rect x="62" y="54" width="22" height="96" rx="2" fill="#E8DCC6" />
+    <rect x="66" y="66" width="14" height="10" fill="#C4562F" opacity="0.8" />
+    <rect x="86" y="64" width="16" height="86" rx="2" fill="#2F4A3A" />
+    <rect x="89" y="78" width="10" height="3" fill="#D8C59E" />
+    <rect x="104" y="72" width="14" height="78" rx="2" fill="#C98A3D" />
+
+    <!-- Libros apilados -->
+    <rect x="122" y="138" width="78" height="12" rx="2" fill="#6B3E2A" />
+    <rect x="126" y="126" width="70" height="12" rx="2" fill="#D9C7A6" />
+    <rect x="120" y="114" width="74" height="12" rx="2" fill="#3C5A47" />
+    <rect x="128" y="104" width="60" height="10" rx="2" fill="#E6D9C2" />
+
+    <!-- Repisa -->
+    <rect x="6" y="150" width="228" height="8" rx="3" fill="#7A4A31" />
+    <rect x="6" y="158" width="228" height="4" rx="2" fill="#5E3824" />
+</svg>
+
+@code {
+    [Parameter]
+    public string? Class { get; set; }
+}

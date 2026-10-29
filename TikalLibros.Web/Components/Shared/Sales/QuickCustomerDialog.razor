@@ -1,0 +1,160 @@
+@* Alta rápida de cliente desde el punto de venta o un pedido: solo los datos
+   para facturarle (nombre o razón social, NIT y contacto). El resto se
+   completa después en Personas > Clientes. Devuelve el cliente creado. *@
+@using TikalLibros.Application.DTOs.Customers
+@inject CustomersApi CustomersApi
+@inject SessionState Session
+
+<MudDialog>
+    <DialogContent>
+        @if (_catalogs is null)
+        {
+            <LoadingState Rows="3" />
+        }
+        else
+        {
+            <EditForm Model="_model" OnValidSubmit="SaveAsync" id="quick-customer-form">
+                <DataAnnotationsValidator />
+                <ServerValidator Result="_result" />
+                <FormErrors Result="_result" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+                <fieldset disabled="@_saving" class="form-fieldset">
+                    <div class="form-grid">
+                        <MudSelect T="string" @bind-Value="_model.PersonType" Label="Tipo de persona *"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var type in _catalogs.PersonTypes)
+                            {
+                                <MudSelectItem T="string" Value="type.Code">@type.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudTextField @bind-Value="_model.Nit" For="@(() => _model.Nit)" Label="@(IsLegal ? "NIT *" : "NIT")"
+                                      HelperText="@(IsLegal ? "Sin guiones o con guion antes del verificador." : "Si no lo tiene, se factura como CF.")"
+                                      MaxLength="20" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-nit" />
+
+                        @if (IsLegal)
+                        {
+                            <MudTextField @bind-Value="_model.LegalName" For="@(() => _model.LegalName)" Label="Razón social *"
+                                          MaxLength="250" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-business" />
+                            <MudTextField @bind-Value="_model.TradeName" For="@(() => _model.TradeName)" Label="Nombre comercial"
+                                          MaxLength="250" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-business" />
+                        }
+                        else
+                        {
+                            <MudTextField @bind-Value="_model.FirstName" For="@(() => _model.FirstName)" Label="Primer nombre *"
+                                          MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-name" />
+                            <MudTextField @bind-Value="_model.MiddleName" For="@(() => _model.MiddleName)" Label="Segundo nombre"
+                                          MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-name" />
+                            <MudTextField @bind-Value="_model.LastName" For="@(() => _model.LastName)" Label="Primer apellido *"
+                                          MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-name" />
+                            <MudTextField @bind-Value="_model.SecondLastName" For="@(() => _model.SecondLastName)" Label="Segundo apellido"
+                                          MaxLength="100" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-name" />
+                        }
+
+                        <MudTextField @bind-Value="_model.Email" For="@(() => _model.Email)" Label="Correo electrónico"
+                                      InputType="InputType.Email" MaxLength="256" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-email" />
+                        <MudTextField Value="_model.Phone" ValueChanged="(string? phone) => PhoneChanged(phone)" For="@(() => _model.Phone)" Label="Teléfono"
+                                      InputType="InputType.Telephone" MaxLength="25" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-phone" />
+
+                        @if (CanSetCredit)
+                        {
+                            <MudNumericField T="decimal" @bind-Value="_model.CreditLimit" For="@(() => _model.CreditLimit)"
+                                             Label="Límite de crédito" Min="0m" Format="N2" HideSpinButtons="true"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudNumericField T="int" @bind-Value="_model.CreditDays" For="@(() => _model.CreditDays)"
+                                             Label="Días de crédito" Min="0" Max="365"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        }
+                    </div>
+                </fieldset>
+                <p class="form-hint">
+                    Dirección, documento de identificación y demás datos se completan después en Personas &gt; Clientes.
+                </p>
+            </EditForm>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Volver</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" form="quick-customer-form"
+                   StartIcon="@Icons.Material.Outlined.PersonAdd" Disabled="@(_saving || _catalogs is null)">
+            @(_saving ? "Guardando…" : "Registrar y usar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Texto que el usuario había escrito al buscar; se usa como nombre inicial.</summary>
+    [Parameter]
+    public string? InitialName { get; set; }
+
+    private readonly SaveCustomerRequest _model = new();
+    private CustomerCatalogsResponse? _catalogs;
+    private IApiResultView? _result;
+    private bool _saving;
+
+    private bool IsLegal => _model.PersonType == SaveCustomerRequest.LegalPerson;
+
+    // Quien puede vender al crédito puede asignar el crédito del cliente nuevo.
+    private bool CanSetCredit => Session.HasPermission(AppPermissions.SalesSellOnCredit);
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApiResult<CustomerCatalogsResponse> catalogs = await CustomersApi.GetCatalogsAsync();
+        _catalogs = catalogs.Data;
+        _result = catalogs.Succeeded ? null : catalogs;
+
+        if (!string.IsNullOrWhiteSpace(InitialName) && !InitialName.Any(char.IsDigit))
+        {
+            string[] words = InitialName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            _model.FirstName = words.FirstOrDefault();
+            _model.LastName = words.Length > 1 ? words[^1] : null;
+        }
+    }
+
+    /// <summary>
+    /// El formulario rápido no pregunta el tipo de teléfono: se asigna al
+    /// escribirlo (celular si existe) para que la validación lo encuentre.
+    /// </summary>
+    private void PhoneChanged(string? phone)
+    {
+        _model.Phone = phone;
+        _model.PhoneTypeId = string.IsNullOrWhiteSpace(phone)
+            ? null
+            : (_catalogs!.PhoneTypes.FirstOrDefault(type => type.Name.Contains("elular", StringComparison.OrdinalIgnoreCase) ||
+                                                            type.Name.Contains("óvil", StringComparison.OrdinalIgnoreCase))
+               ?? _catalogs.PhoneTypes.FirstOrDefault())?.Id;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _result = null;
+        ApiResult<CustomerResponse> result = await CustomersApi.CreateAsync(_model);
+        _saving = false;
+
+        if (!result.Succeeded)
+        {
+            _result = result;
+            return;
+        }
+
+        CustomerResponse customer = result.Data!;
+
+        Dialog.Close(DialogResult.Ok(new CustomerListItemResponse
+        {
+            Id = customer.Id,
+            Code = customer.Code,
+            PersonType = customer.PersonType,
+            DisplayName = customer.DisplayName,
+            Nit = customer.Nit,
+            Email = customer.Email,
+            Phone = customer.Phone,
+            CreditLimit = customer.CreditLimit,
+            CreditDays = customer.CreditDays,
+            IsActive = true
+        }));
+    }
+}

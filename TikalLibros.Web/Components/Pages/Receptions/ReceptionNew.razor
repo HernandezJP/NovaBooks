@@ -1,0 +1,359 @@
+@page "/recepciones/nueva"
+@attribute [RequirePermission(AppPermissions.PurchasesReceive)]
+@using System.ComponentModel.DataAnnotations
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Purchasing
+@using TikalLibros.Application.Validation
+@inject PurchasesApi PurchasesApi
+@inject ReceptionsApi ReceptionsApi
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Registrar recepción | Tikal Libros</PageTitle>
+
+<PageHeader Title="Registrar recepción" Breadcrumbs="_breadcrumbs"
+            Description="@(_order is null ? "Indique lo que llegó del proveedor." : $"Orden {_order.Number} · {_order.SupplierName}")" />
+
+@if (OrderId is null)
+{
+    <div class="panel">
+        <EmptyState Icon="@Icons.Material.Outlined.ShoppingCart" Title="Seleccione una orden"
+                    Message="Abra una orden emitida y use el botón Registrar recepción." />
+        <div class="form-actions"><MudButton Href="/compras" Variant="Variant.Filled" Color="Color.Primary">Ir a órdenes de compra</MudButton></div>
+    </div>
+}
+else if (_loadError is not null)
+{
+    <div class="panel"><ErrorState Title="No fue posible cargar la orden" Message="@_loadError" OnRetry="LoadAsync" /></div>
+}
+else if (_order is null)
+{
+    <div class="panel"><LoadingState Rows="6" /></div>
+}
+else if (!_order.CanReceive)
+{
+    <div class="panel">
+        <EmptyState Icon="@Icons.Material.Outlined.Block" Title="Esta orden no puede recibirse"
+                    Message="@($"La orden está {_order.Status.ToLowerInvariant()}. Solo se reciben órdenes emitidas o recibidas parcialmente.")" />
+        <div class="form-actions"><MudButton Href="@($"/compras/{_order.Id}")" Variant="Variant.Text">Volver a la orden</MudButton></div>
+    </div>
+}
+else
+{
+    <EditForm Model="_header" OnValidSubmit="SubmitAsync" OnInvalidSubmit="OnInvalidSubmitAsync">
+        <DataAnnotationsValidator />
+        <div class="layout-stack">
+            <div class="panel">
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <fieldset disabled="@_saving" class="form-fieldset">
+                    <div class="form-section">
+                        <div class="form-section__title">Factura y almacén</div>
+                        <div class="form-grid">
+                            <MudTextField @bind-Value="_header.SupplierDocumentSeries" For="@(() => _header.SupplierDocumentSeries)"
+                                          Label="Serie de factura" MaxLength="30" Class="tl-filter-series"
+                                          HelperText="Letras sin tilde, números y guion."
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudTextField @bind-Value="_header.SupplierDocumentNumber" For="@(() => _header.SupplierDocumentNumber)"
+                                          Label="Número de factura" MaxLength="20" Class="tl-filter-digits" InputMode="InputMode.numeric"
+                                          HelperText="Solo dígitos."
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <DateField @bind-Value="ReceivedOn" Label="Fecha de recepción" MinDate="MinDate" MaxDate="DateTime.Today" HelperText="Hoy o hasta 30 días atrás." />
+                            <MudSelect T="int?" @bind-Value="_header.WarehouseId" Label="Almacén de ingreso"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense">
+                                @foreach (CatalogOptionResponse warehouse in _warehouses)
+                                {
+                                    <MudSelectItem T="int?" Value="warehouse.Id">@warehouse.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </div>
+                        <MudTextField @bind-Value="_header.Notes" For="@(() => _header.Notes)" Label="Observaciones"
+                                      Lines="2" Counter="1000" MaxLength="1000" Class="mt-3 tl-filter-plain"
+                                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </div>
+                </fieldset>
+            </div>
+
+            <Panel Title="Libros recibidos" Icon="@Icons.Material.Outlined.MenuBook"
+                   Subtitle="Lo aceptado entra al inventario; lo rechazado sigue pendiente en la orden y requiere motivo.">
+                <Actions>
+                    <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Outlined.DoneAll"
+                               OnClick="AcceptAll" Disabled="_saving">
+                        Aceptar todo lo pendiente
+                    </MudButton>
+                </Actions>
+                <ChildContent>
+                    <div class="table-scroll">
+                        <MudSimpleTable Dense="true" Elevation="0" Class="tl-table doc-lines">
+                            <thead>
+                                <tr>
+                                    <th>Libro</th>
+                                    <th class="text-right">Pendiente</th>
+                                    <th class="doc-lines__qty">Aceptadas</th>
+                                    <th class="doc-lines__qty">Rechazadas</th>
+                                    <th>Motivo del rechazo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (LineRow line in _lines)
+                                {
+                                    <tr @key="line.OrderLineId">
+                                        <td class="doc-lines__title">
+                                            <div class="cell-primary">@line.Title</div>
+                                            <div class="cell-secondary">@line.Code · costo @line.UnitCost.ToString("N2")</div>
+                                            @if (_submitted && line.Error is { } error)
+                                            {
+                                                <div class="field-error">@error</div>
+                                            }
+                                        </td>
+                                        <td class="number">@line.Pending.ToString("N0")</td>
+                                        <td>
+                                            <MudNumericField T="int" @bind-Value="line.Accepted" Min="0" Max="@((int)line.Pending)" Immediate="true"
+                                                             Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Aceptadas de {line.Title}")"
+                                                             Error="@(_submitted && line.QuantityError is not null)" Disabled="_saving" />
+                                        </td>
+                                        <td>
+                                            <MudNumericField T="int" @bind-Value="line.Rejected" Min="0" Max="@((int)line.Pending)" Immediate="true"
+                                                             Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Rechazadas de {line.Title}")"
+                                                             Error="@(_submitted && line.QuantityError is not null)" Disabled="_saving" />
+                                        </td>
+                                        <td>
+                                            <MudTextField @bind-Value="line.RejectReason" MaxLength="500" Immediate="true"
+                                                          Disabled="@(line.Rejected == 0 || _saving)" Placeholder="@(line.Rejected == 0 ? "—" : "Ej.: portada dañada")"
+                                                          Error="@(_submitted && line.ReasonError is not null)"
+                                                          Class="tl-filter-plain" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                          aria-label="@($"Motivo de rechazo de {line.Title}")" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+
+                    <dl class="doc-totals">
+                        <dt>Unidades aceptadas</dt><dd>@_lines.Sum(line => line.Accepted).ToString("N0")</dd>
+                        <dt>Unidades rechazadas</dt><dd>@_lines.Sum(line => line.Rejected).ToString("N0")</dd>
+                    </dl>
+
+                    <div class="form-actions">
+                        <MudButton Href="@($"/compras/{_order.Id}")" Variant="Variant.Text" Disabled="_saving">Cancelar</MudButton>
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Outlined.MoveToInbox" Disabled="_saving">
+                            @(_saving ? "Registrando…" : "Registrar e ingresar al inventario")
+                        </MudButton>
+                    </div>
+                </ChildContent>
+            </Panel>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "orden")]
+    public int? OrderId { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Recepciones", "/recepciones"),
+        new("Nueva", null, disabled: true)
+    ];
+
+    private PurchaseOrderResponse? _order;
+    private IReadOnlyCollection<CatalogOptionResponse> _warehouses = [];
+    private readonly HeaderModel _header = new();
+    private readonly List<LineRow> _lines = [];
+    private string? _loadError;
+    private bool _saving;
+    private bool _submitted;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    private DateTime MinDate
+    {
+        get
+        {
+            DateTime limit = DateTime.Today.AddDays(-30);
+            DateTime issued = _order?.IssueDate.ToLocalTime().Date ?? limit;
+            return issued > limit ? issued : limit;
+        }
+    }
+
+    private DateTime? ReceivedOn
+    {
+        get => _header.ReceivedOn?.ToDateTime(TimeOnly.MinValue);
+        set => _header.ReceivedOn = value is null ? null : DateOnly.FromDateTime(value.Value);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (OrderId is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+
+        Task<ApiResult<ReceptionCatalogsResponse>> catalogsTask = ReceptionsApi.GetCatalogsAsync();
+        ApiResult<PurchaseOrderResponse> order = await PurchasesApi.GetAsync(OrderId!.Value);
+
+        if (!order.Succeeded || order.Data is null)
+        {
+            _loadError = order.Message;
+            return;
+        }
+
+        _order = order.Data;
+        _warehouses = (await catalogsTask).Data?.Warehouses ?? [];
+        _header.WarehouseId ??= _warehouses.FirstOrDefault()?.Id;
+        _header.ReceivedOn ??= DateOnly.FromDateTime(DateTime.Today);
+
+        _lines.Clear();
+        _lines.AddRange(_order.Lines
+            .Where(line => line.Pending > 0)
+            .Select(line => new LineRow
+            {
+                OrderLineId = line.Id,
+                Code = line.BookCode,
+                Title = line.Title,
+                Pending = line.Pending,
+                UnitCost = line.UnitCost
+            }));
+    }
+
+    private void AcceptAll()
+    {
+        foreach (LineRow line in _lines)
+        {
+            line.Accepted = (int)line.Pending;
+            line.Rejected = 0;
+            line.RejectReason = null;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _submitted = true;
+
+        List<LineRow> touched = _lines.Where(line => line.Accepted + line.Rejected > 0).ToList();
+
+        if (touched.Count == 0 || touched.All(line => line.Accepted == 0) || _lines.Any(line => line.Error is not null))
+        {
+            await OnInvalidSubmitAsync();
+
+            if (touched.All(line => line.Accepted == 0))
+            {
+                Snackbar.Add("Acepte al menos una unidad para registrar la recepción.", Severity.Warning);
+            }
+
+            return;
+        }
+
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<ReceptionResponse> result = await ReceptionsApi.RegisterAsync(new RegisterReceptionRequest
+            {
+                PurchaseOrderId = _order!.Id,
+                WarehouseId = _header.WarehouseId,
+                ReceivedOn = _header.ReceivedOn,
+                SupplierDocumentSeries = _header.SupplierDocumentSeries,
+                SupplierDocumentNumber = _header.SupplierDocumentNumber,
+                Notes = _header.Notes,
+                Lines = touched
+                    .Select(line => new ReceptionLineRequest
+                    {
+                        PurchaseOrderLineId = line.OrderLineId,
+                        Accepted = line.Accepted,
+                        Rejected = line.Rejected,
+                        RejectReason = line.Rejected > 0 ? line.RejectReason : null
+                    })
+                    .ToList()
+            });
+
+            if (!result.Succeeded)
+            {
+                _saveResult = result;
+                return;
+            }
+
+            Snackbar.Add($"Recepción {result.Data!.Number} registrada. El inventario fue actualizado.", Severity.Success);
+            Navigation.NavigateTo($"/recepciones/{result.Data.Id}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task OnInvalidSubmitAsync()
+    {
+        _submitted = true;
+        _showInvalid = true;
+        _saveResult = null;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("tikalLibros.scrollToFirstError");
+    }
+
+    private sealed class HeaderModel
+    {
+        public int? WarehouseId { get; set; }
+
+        public DateOnly? ReceivedOn { get; set; }
+
+        [StringLength(30, ErrorMessage = "La serie no puede superar los 30 caracteres.")]
+        [RegularExpression("^[A-Za-z0-9-]+$", ErrorMessage = "La serie solo admite letras sin tildes, números y guion.")]
+        public string? SupplierDocumentSeries { get; set; }
+
+        [StringLength(20, ErrorMessage = "El número de factura no puede superar los 20 dígitos.")]
+        [RegularExpression("^[0-9]+$", ErrorMessage = "El número de factura solo admite dígitos.")]
+        [RequiredWhen(nameof(SupplierDocumentSeries), "Indique el número de la factura de esa serie.")]
+        public string? SupplierDocumentNumber { get; set; }
+
+        [StringLength(1000, ErrorMessage = "Las observaciones no pueden superar los 1000 caracteres.")]
+        [PlainText]
+        public string? Notes { get; set; }
+    }
+
+    private sealed class LineRow
+    {
+        public int OrderLineId { get; init; }
+
+        public string Code { get; init; } = string.Empty;
+
+        public string Title { get; init; } = string.Empty;
+
+        public decimal Pending { get; init; }
+
+        public decimal UnitCost { get; init; }
+
+        public int Accepted { get; set; }
+
+        public int Rejected { get; set; }
+
+        public string? RejectReason { get; set; }
+
+        public string? QuantityError =>
+            Accepted < 0 || Rejected < 0 ? "Las cantidades no pueden ser negativas."
+            : Accepted + Rejected > Pending ? $"Solo hay {Pending:N0} unidades pendientes."
+            : null;
+
+        public string? ReasonError =>
+            Rejected > 0 && (RejectReason?.Trim().Length ?? 0) < 5 ? "Indique el motivo del rechazo (mínimo 5 caracteres)."
+            : RejectReason?.IndexOfAny(['<', '>']) >= 0 ? "El motivo no puede contener < ni >."
+            : null;
+
+        public string? Error => QuantityError ?? ReasonError;
+    }
+}

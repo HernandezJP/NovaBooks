@@ -1,0 +1,187 @@
+@* Libros de un pedido o venta: búsqueda con precio de la lista y existencia
+   libre, cantidad, descuento y totales (precios con IVA incluido). Avisa lo
+   que la API rechazará o mandará a aprobación, sin reemplazar su validación. *@
+@using TikalLibros.Application.DTOs.Sales
+@inject OrdersApi OrdersApi
+@inject ISnackbar Snackbar
+
+<div class="doc-add-line">
+    <MudAutocomplete @ref="_search" T="SalesBookOptionResponse" Label="Agregar libro"
+                     Value="_toAdd" ValueChanged="AddAsync"
+                     SearchFunc="SearchAsync" ToStringFunc="@(item => item?.Title)"
+                     Placeholder="Buscar por título, código, ISBN o código de barras" ResetValueOnEmptyText="true" CoerceText="false"
+                     MaxItems="20" Dense="true" DebounceInterval="300" MinCharacters="2" Disabled="Disabled"
+                     Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain">
+        <ItemTemplate Context="book">
+            <div>
+                <div class="cell-primary">@book.Title</div>
+                <div class="cell-secondary">
+                    @book.Code @(book.Isbn13 is null ? "" : $"· ISBN {book.Isbn13}")
+                    · @(book.Price is null ? "sin precio en la lista" : $"Q {book.Price:N2}")
+                    · @book.Available.ToString("N0") disponible(s)
+                </div>
+            </div>
+        </ItemTemplate>
+        <NoItemsTemplate><div class="autocomplete-empty">No se encontraron libros a la venta.</div></NoItemsTemplate>
+    </MudAutocomplete>
+</div>
+
+@if (Lines.Count == 0)
+{
+    <EmptyState Icon="@Icons.Material.Outlined.MenuBook" Title="Sin libros"
+                Message="@(Submitted ? "Agregue al menos un libro." : "Busque y agregue los libros.")" />
+}
+else
+{
+    <div class="table-scroll">
+        <MudSimpleTable Dense="true" Elevation="0" Class="tl-table doc-lines">
+            <thead>
+                <tr>
+                    <th>Libro</th>
+                    <th class="doc-lines__qty">Cantidad *</th>
+                    <th class="text-right">Precio</th>
+                    <th class="doc-lines__qty">Desc. %</th>
+                    <th class="text-right">Total</th>
+                    <th class="tl-table__actions"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (SaleLineRow line in Lines)
+                {
+                    SaleAmounts amounts = line.Amounts;
+                    <tr @key="line.BookId">
+                        <td class="doc-lines__title">
+                            <div class="cell-primary">@line.Title</div>
+                            <div class="cell-secondary">@line.Code · @line.Available.ToString("N0") disponible(s)</div>
+                            @if (Submitted && line.Error(MaximumDiscount) is { } error)
+                            {
+                                <div class="field-error">@error</div>
+                            }
+                            else if ((line.Quantity ?? 0) > line.Available)
+                            {
+                                <div class="field-warning">Solo hay @line.Available.ToString("N0") disponible(s); no podrá confirmarse.</div>
+                            }
+                            @if (line.DiscountPercent > DiscountWithoutApproval && line.DiscountPercent <= MaximumDiscount)
+                            {
+                                <div class="field-warning">Descuento mayor a @DiscountWithoutApproval.ToString("0.##") %: requiere aprobación.</div>
+                            }
+                        </td>
+                        <td>
+                            <MudNumericField T="int?" Value="line.Quantity" ValueChanged="value => Change(() => line.Quantity = value)"
+                                             Min="1" Max="10000" Immediate="true" Disabled="Disabled"
+                                             Error="@(Submitted && line.QuantityError is not null)"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Cantidad de {line.Title}")" />
+                        </td>
+                        <td class="number">@line.UnitPrice.ToString("N2")</td>
+                        <td>
+                            <MudNumericField T="decimal" Value="line.DiscountPercent" ValueChanged="value => Change(() => line.DiscountPercent = value)"
+                                             Min="0m" Max="100m" Format="0.##" HideSpinButtons="true" Immediate="true"
+                                             Disabled="@(Disabled || !CanDiscount)"
+                                             Error="@(line.DiscountError(MaximumDiscount) is not null)"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Descuento de {line.Title}")" />
+                        </td>
+                        <td class="number">
+                            @amounts.Total.ToString("N2")
+                            @if (amounts.Discount > 0)
+                            {
+                                <div class="cell-secondary">− @amounts.Discount.ToString("N2")</div>
+                            }
+                        </td>
+                        <td class="tl-table__actions">
+                            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error"
+                                           aria-label="@($"Quitar {line.Title}")" Disabled="Disabled"
+                                           OnClick="() => Change(() => Lines.Remove(line))" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </div>
+
+    <dl class="doc-totals">
+        <dt>Subtotal</dt><dd>Q @Lines.Sum(line => line.Amounts.Subtotal).ToString("N2")</dd>
+        <dt>Descuento</dt><dd>− Q @Lines.Sum(line => line.Amounts.Discount).ToString("N2")</dd>
+        <dt>IVA incluido</dt><dd>Q @Lines.Sum(line => line.Amounts.Tax).ToString("N2")</dd>
+        <dt class="doc-totals__grand">Total</dt><dd class="doc-totals__grand">Q @Total.ToString("N2")</dd>
+    </dl>
+}
+
+@if (!CanDiscount)
+{
+    <p class="form-hint">Su usuario no puede aplicar descuentos.</p>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public List<SaleLineRow> Lines { get; set; } = [];
+
+    [Parameter]
+    public EventCallback LinesChanged { get; set; }
+
+    [Parameter]
+    public int? PriceListId { get; set; }
+
+    [Parameter]
+    public int? WarehouseId { get; set; }
+
+    [Parameter]
+    public decimal DiscountWithoutApproval { get; set; } = 10m;
+
+    [Parameter]
+    public decimal MaximumDiscount { get; set; } = 50m;
+
+    [Parameter]
+    public bool CanDiscount { get; set; }
+
+    [Parameter]
+    public bool Submitted { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    private MudAutocomplete<SalesBookOptionResponse>? _search;
+    private SalesBookOptionResponse? _toAdd;
+
+    private decimal Total => Lines.Sum(line => line.Amounts.Total);
+
+    private async Task<IEnumerable<SalesBookOptionResponse>> SearchAsync(string? text, CancellationToken token)
+    {
+        ApiResult<List<SalesBookOptionResponse>> result = await OrdersApi.SearchBooksAsync(text, PriceListId, WarehouseId, token);
+        return result.Data?.Where(book => Lines.All(line => line.BookId != book.Id)) ?? [];
+    }
+
+    private async Task AddAsync(SalesBookOptionResponse? book)
+    {
+        if (book is null || Lines.Any(line => line.BookId == book.Id))
+        {
+            return;
+        }
+
+        if (book.Price is null)
+        {
+            Snackbar.Add($"«{book.Title}» no tiene precio en la lista seleccionada.", Severity.Warning);
+        }
+        else if (Lines.Count >= SaveOrderRequest.MaxLines)
+        {
+            Snackbar.Add($"Se admiten como máximo {SaveOrderRequest.MaxLines} libros.", Severity.Warning);
+        }
+        else
+        {
+            Lines.Add(SaleLineRow.From(book));
+            await LinesChanged.InvokeAsync();
+        }
+
+        _toAdd = null;
+
+        if (_search is not null)
+        {
+            await _search.ClearAsync();
+        }
+    }
+
+    private Task Change(Action change)
+    {
+        change();
+        return LinesChanged.InvokeAsync();
+    }
+}

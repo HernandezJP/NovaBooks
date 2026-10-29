@@ -1,0 +1,125 @@
+@implements IDisposable
+@inject MenuState Menu
+@inject NavigationManager Navigation
+
+<nav aria-label="Menú principal" class="tl-nav-wrapper">
+    @if (Menu.Groups.Count == 0 && Menu.IsLoading)
+    {
+        <div class="tl-nav__loading">
+            @for (int index = 0; index < 6; index++)
+            {
+                <MudSkeleton SkeletonType="SkeletonType.Text" Width="80%" Class="tl-nav__skeleton" />
+            }
+        </div>
+    }
+    else if (Menu.Groups.Count == 0 && Menu.ErrorMessage is not null)
+    {
+        <div class="tl-nav__error">
+            <span>No se pudo cargar el menú.</span>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="Menu.ReloadAsync">Reintentar</MudButton>
+        </div>
+    }
+    else
+    {
+        <MudNavMenu Class="tl-nav">
+            @foreach (var group in Menu.Groups)
+            {
+                @* Catálogo y personas se muestran como lista plana; ventas,
+                   compras, inventario, reportes y configuración se agrupan en
+                   desplegables. *@
+                @if (CollapsibleGroups.ContainsKey(group.Key) && !Collapsed)
+                {
+                    <MudNavGroup Title="@group.Title" Icon="@CollapsibleGroups[group.Key].Icon"
+                                 Expanded="_expanded.Contains(group.Key)"
+                                 ExpandedChanged="value => Toggle(group.Key, value)">
+                        @foreach (var item in group.Items)
+                        {
+                            @NavLink(item)
+                        }
+                    </MudNavGroup>
+                }
+                else
+                {
+                    @foreach (var item in group.Items)
+                    {
+                        @if (Collapsed)
+                        {
+                            <MudTooltip Text="@item.Title" Placement="Placement.Right" RootClass="tl-nav__tooltip">
+                                @NavLink(item)
+                            </MudTooltip>
+                        }
+                        else
+                        {
+                            @NavLink(item)
+                        }
+                    }
+                }
+            }
+        </MudNavMenu>
+    }
+</nav>
+
+@code {
+    /// <summary>Grupos desplegables con su ícono y las rutas que los abren.</summary>
+    private static readonly Dictionary<string, (string Icon, string[] Paths)> CollapsibleGroups = new()
+    {
+        ["ventas"] = (Icons.Material.Outlined.PointOfSale, ["/ventas", "/pedidos", "/caja"]),
+        ["compras"] = (Icons.Material.Outlined.ShoppingCart, ["/compras", "/recepciones"]),
+        ["inventario"] = (Icons.Material.Outlined.Inventory2, ["/inventario"]),
+        ["reportes"] = (Icons.Material.Outlined.Insights, ["/reportes", "/auditoria"]),
+        ["configuracion"] = (Icons.Material.Outlined.Settings, ["/usuarios", "/roles", "/permisos", "/configuracion"])
+    };
+
+    /// <summary>Menú contraído a solo íconos (escritorio).</summary>
+    [Parameter]
+    public bool Collapsed { get; set; }
+
+    [Parameter]
+    public EventCallback OnNavigate { get; set; }
+
+    private readonly HashSet<string> _expanded = [];
+
+    private RenderFragment NavLink(TikalLibros.Application.DTOs.Menu.MenuItemResponse item) => __builder =>
+    {
+        <MudNavLink Href="@item.Href"
+                    Match="@(item.Href == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                    Icon="@MenuState.IconFor(item.Icon)"
+                    OnClick="OnNavigate">
+            @item.Title
+        </MudNavLink>
+    };
+
+    protected override void OnInitialized()
+    {
+        Menu.Changed += OnMenuChanged;
+        string path = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0];
+
+        // Abre el grupo al que pertenece la página actual.
+        foreach ((string key, (string _, string[] paths)) in CollapsibleGroups)
+        {
+            if (paths.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                _expanded.Add(key);
+            }
+        }
+    }
+
+    private void Toggle(string key, bool expanded)
+    {
+        if (expanded)
+        {
+            _expanded.Add(key);
+        }
+        else
+        {
+            _expanded.Remove(key);
+        }
+    }
+
+    public void Dispose()
+    {
+        Menu.Changed -= OnMenuChanged;
+    }
+
+    private void OnMenuChanged() => _ = InvokeAsync(StateHasChanged);
+}

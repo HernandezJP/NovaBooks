@@ -1,0 +1,16 @@
+<div class="state state--loading" role="status" aria-live="polite" aria-label="Cargando">
+    @for (int row = 0; row < Rows; row++)
+    {
+        <div class="state__skeleton-row">
+            <MudSkeleton SkeletonType="SkeletonType.Text" Width="28%" />
+            <MudSkeleton SkeletonType="SkeletonType.Text" Width="22%" />
+            <MudSkeleton SkeletonType="SkeletonType.Text" Width="18%" />
+            <MudSkeleton SkeletonType="SkeletonType.Text" Width="12%" />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int Rows { get; set; } = 5;
+}

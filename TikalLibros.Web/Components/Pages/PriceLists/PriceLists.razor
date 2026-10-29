@@ -1,0 +1,207 @@
+@page "/listas-precio"
+@attribute [RequirePermission(AppPermissions.CatalogView)]
+@implements IDisposable
+@using TikalLibros.Application.DTOs.PriceLists
+@inject PriceListsApi PriceListsApi
+@inject SessionState Session
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Listas de precio | Tikal Libros</PageTitle>
+
+<PageHeader Title="Listas de precio" Description="Listas con las que se venden los libros. La predeterminada se propone en ventas y pedidos." />
+
+<Panel Title="Listas de precio" Subtitle="Los precios de cada libro se asignan desde la ficha del libro." Icon="@Icons.Material.Outlined.Sell">
+    <Actions>
+        @if (CanManage)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">
+                Nueva lista
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
+        <div class="list-toolbar">
+            <MudTextField @bind-Value="_search" Placeholder="Buscar listas"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                          DebounceInterval="400" OnDebounceIntervalElapsed="_ => LoadAsync()"
+                          OnClearButtonClick="ClearSearchAsync" MaxLength="100"
+                          aria-label="Buscar listas de precio" Class="tl-filter-plain list-toolbar__search" />
+            <MudSelect T="StatusFilter" Value="_status" ValueChanged="StatusChangedAsync" Label="Estado"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+                <MudSelectItem Value="StatusFilter.Active">Activas</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.Inactive">Inactivas</MudSelectItem>
+                <MudSelectItem Value="StatusFilter.All">Todas</MudSelectItem>
+            </MudSelect>
+        </div>
+
+        @if (_loading && _items is null)
+        {
+            <LoadingState />
+        }
+        else if (_error is not null)
+        {
+            <ErrorState Title="No fue posible cargar las listas de precio" Message="@_error" OnRetry="LoadAsync" />
+        }
+        else if (_items is { Count: 0 })
+        {
+            <EmptyState Icon="@Icons.Material.Outlined.Sell" Title="No se encontraron listas de precio"
+                        Message="Pruebe con otro término de búsqueda o estado." />
+        }
+        else if (_items is not null)
+        {
+            <div class="table-scroll">
+                <MudTable Items="_items" Hover="true" Dense="true" Elevation="0" Loading="_loading" Breakpoint="Breakpoint.None" Class="tl-table">
+                    <HeaderContent>
+                        <MudTh>Nombre</MudTh>
+                        <MudTh Class="col-optional">Descripción</MudTh>
+                        <MudTh Class="text-right">Libros con precio</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh Class="tl-table__actions">Acciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <div class="cell-primary">
+                                @context.Name
+                                @if (context.IsDefault)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined" Class="ml-1">Predeterminada</MudChip>
+                                }
+                            </div>
+                            <div class="cell-secondary">@context.Code</div>
+                        </MudTd>
+                        <MudTd Class="col-optional">@(context.Description ?? "—")</MudTd>
+                        <MudTd Class="text-right">@context.BooksCount</MudTd>
+                        <MudTd><StatusChip IsActive="context.IsActive" ActiveText="Activa" InactiveText="Inactiva" /></MudTd>
+                        <MudTd Class="tl-table__actions">
+                            @if (CanManage)
+                            {
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true"
+                                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                         aria-label="@($"Acciones para {context.Name}")">
+                                    <MudMenuItem Icon="@Icons.Material.Outlined.Edit" OnClick="() => EditAsync(context)">Editar</MudMenuItem>
+                                    @if (!context.IsDefault)
+                                    {
+                                        <MudMenuItem Icon="@(context.IsActive ? Icons.Material.Outlined.Block : Icons.Material.Outlined.CheckCircle)"
+                                                     OnClick="() => ToggleStatusAsync(context)">
+                                            @(context.IsActive ? "Desactivar" : "Reactivar")
+                                        </MudMenuItem>
+                                    }
+                                </MudMenu>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </div>
+        }
+    </ChildContent>
+</Panel>
+
+@code {
+    private List<PriceListResponse>? _items;
+    private string? _search;
+    private StatusFilter _status = StatusFilter.Active;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    private bool CanManage => Session.HasPermission(AppPermissions.CatalogManagePrices);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+
+        _loading = true;
+        _error = null;
+
+        ApiResult<List<PriceListResponse>> result = await PriceListsApi.GetAllAsync(_search, _status, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _items = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+        _loading = false;
+    }
+
+    private Task ClearSearchAsync(MouseEventArgs _)
+    {
+        _search = null;
+        return LoadAsync();
+    }
+
+    private Task StatusChangedAsync(StatusFilter status)
+    {
+        _status = status;
+        return LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        PriceListResponse? list = await Dialogs.ShowFormAsync<PriceListFormDialog, PriceListResponse>(
+            "Nueva lista de precios", new DialogParameters<PriceListFormDialog>(), DialogExtensions.WideFormOptions);
+
+        if (list is not null)
+        {
+            Snackbar.Add($"Lista {list.Name} registrada.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditAsync(PriceListResponse list)
+    {
+        PriceListResponse? updated = await Dialogs.ShowFormAsync<PriceListFormDialog, PriceListResponse>(
+            "Editar lista de precios",
+            new DialogParameters<PriceListFormDialog> { { dialog => dialog.PriceList, list } },
+            DialogExtensions.WideFormOptions);
+
+        if (updated is not null)
+        {
+            Snackbar.Add($"Lista {updated.Name} actualizada.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task ToggleStatusAsync(PriceListResponse list)
+    {
+        bool activate = !list.IsActive;
+
+        bool confirmed = await Dialogs.ConfirmAsync(
+            activate ? "Reactivar lista" : "Desactivar lista",
+            activate
+                ? $"¿Desea reactivar la lista {list.Name}?"
+                : $"¿Desea desactivar la lista {list.Name}? Sus precios se conservan, pero no podrá elegirse en ventas ni pedidos nuevos.",
+            activate ? "Reactivar" : "Desactivar",
+            activate ? Color.Primary : Color.Error);
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ApiResult<PriceListResponse> result = await PriceListsApi.ChangeStatusAsync(list.Id, activate);
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Lista {list.Name} {(activate ? "reactivada" : "desactivada")}.", Severity.Success);
+            await LoadAsync();
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

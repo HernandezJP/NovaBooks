@@ -1,0 +1,762 @@
+@page "/compras/nueva"
+@page "/compras/{Id:int}"
+@attribute [RequirePermission(AppPermissions.PurchasesView)]
+@using System.ComponentModel.DataAnnotations
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Purchasing
+@using TikalLibros.Application.Validation
+@inject PurchasesApi PurchasesApi
+@inject ReceptionsApi ReceptionsApi
+@inject SessionState Session
+@inject NavigationManager Navigation
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>@TitleText | Tikal Libros</PageTitle>
+
+@if (RequiredPermissionMissing is { } missing)
+{
+    <AccessDenied Permission="@missing" />
+}
+else
+{
+    <PageHeader Title="@TitleText" Breadcrumbs="_breadcrumbs" Description="@DescriptionText">
+        <Actions>
+            @if (_order is not null)
+            {
+                <DocumentStatus Code="@_order.StatusCode" Text="@_order.Status" />
+            }
+        </Actions>
+    </PageHeader>
+
+    @if (_loadError is not null)
+    {
+        <div class="panel"><ErrorState Title="No fue posible cargar la orden" Message="@_loadError" OnRetry="LoadAsync" /></div>
+    }
+    else if (_catalogs is null || (Id is not null && _order is null))
+    {
+        <div class="panel"><LoadingState Rows="6" /></div>
+    }
+    else if (Editable)
+    {
+        <EditForm Model="_header" OnValidSubmit="SubmitAsync" OnInvalidSubmit="OnInvalidSubmitAsync">
+            <DataAnnotationsValidator />
+            <div class="layout-stack">
+                <div class="panel">
+                    <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                    @if (IsDirect)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-4">
+                            La compra directa crea la orden ya emitida y la recibe completa: el inventario se actualiza al guardar.
+                        </MudAlert>
+                    }
+                    <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+                    <fieldset disabled="@_saving" class="form-fieldset">
+                        <div class="form-section">
+                            <div class="form-section__title">Proveedor y condiciones</div>
+                            <div class="form-grid">
+                                <MudAutocomplete T="CatalogOptionResponse" Label="Proveedor *"
+                                                 Value="SelectedSupplier" ValueChanged="supplier => _header.SupplierId = supplier?.Id"
+                                                 SearchFunc="SearchSuppliersAsync" ToStringFunc="@(item => item is null ? null : $"{item.Name} ({item.Code})")"
+                                                 Placeholder="Escriba para buscar" Clearable="true" ResetValueOnEmptyText="true"
+                                                 MaxItems="25" Dense="true" OpenOnFocus="true"
+                                                 Error="@(_submitted && _header.SupplierId is null)"
+                                                 ErrorText="Seleccione el proveedor."
+                                                 HelperText="@(_catalogs.Suppliers.Count == 0 ? "No hay proveedores activos; regístrelos en Personas > Proveedores." : "Solo proveedores activos.")"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain">
+                                    <NoItemsTemplate><div class="autocomplete-empty">No se encontraron proveedores.</div></NoItemsTemplate>
+                                </MudAutocomplete>
+                                <DateField @bind-Value="ExpectedDate" Label="Entrega esperada" MinDate="DateTime.Today" MaxDate="DateTime.Today.AddYears(1)" Clearable="true" />
+                                <MudSelect T="int?" @bind-Value="_header.CurrencyId" Label="Moneda *"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                                    @foreach (CurrencyOptionResponse currency in _catalogs.Currencies)
+                                    {
+                                        <MudSelectItem T="int?" Value="currency.Id">@currency.Name (@currency.Symbol)</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                @if (!IsDefaultCurrency)
+                                {
+                                    <MudNumericField T="decimal?" @bind-Value="_header.ExchangeRate" For="@(() => _header.ExchangeRate)"
+                                                     Label="Tipo de cambio *" Min="0.000001m" Max="100000m" Format="N4" HideSpinButtons="true"
+                                                     HelperText="Quetzales por unidad de la moneda."
+                                                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                }
+                            </div>
+                            <MudTextField @bind-Value="_header.Notes" For="@(() => _header.Notes)" Label="Observaciones"
+                                          Lines="2" Counter="1000" MaxLength="1000" Class="mt-3 tl-filter-plain"
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </div>
+
+                        @if (IsDirect)
+                        {
+                            <div class="form-section">
+                                <div class="form-section__title">Factura y recepción</div>
+                                <div class="form-grid">
+                                    <MudTextField @bind-Value="_header.SupplierDocumentSeries" For="@(() => _header.SupplierDocumentSeries)"
+                                                  Label="Serie de factura" MaxLength="30" Class="tl-filter-series"
+                                                  HelperText="Letras sin tilde, números y guion."
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                    <MudTextField @bind-Value="_header.SupplierDocumentNumber" For="@(() => _header.SupplierDocumentNumber)"
+                                                  Label="Número de factura" MaxLength="20" Class="tl-filter-digits" InputMode="InputMode.numeric"
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                    <MudSelect T="int?" @bind-Value="_warehouseId" Label="Almacén de ingreso"
+                                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                                        @foreach (CatalogOptionResponse warehouse in _warehouses)
+                                        {
+                                            <MudSelectItem T="int?" Value="warehouse.Id">@warehouse.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </div>
+                            </div>
+                        }
+                    </fieldset>
+                </div>
+
+                <Panel Title="Libros" Icon="@Icons.Material.Outlined.MenuBook"
+                       Subtitle="Costos sin IVA; el impuesto se calcula con el de cada libro.">
+                    <div class="doc-add-line">
+                        <MudAutocomplete @ref="_bookSearch" T="PurchaseBookOptionResponse" Label="Agregar libro"
+                                         Value="_bookToAdd" ValueChanged="AddBook"
+                                         SearchFunc="SearchBooksAsync" ToStringFunc="@(item => item?.Title)"
+                                         Placeholder="Buscar por título, código o ISBN" ResetValueOnEmptyText="true" CoerceText="false"
+                                         MaxItems="20" Dense="true" DebounceInterval="300" MinCharacters="2" Disabled="_saving"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain">
+                            <ItemTemplate Context="book">
+                                <div>
+                                    <div class="cell-primary">@book.Title</div>
+                                    <div class="cell-secondary">
+                                        @book.Code @(book.Isbn is null ? "" : $"· ISBN {book.Isbn}") · IVA @book.TaxPercent.ToString("0.##") %
+                                        @(book.LastCost is null ? "" : $"· último costo Q {book.LastCost:N2}")
+                                    </div>
+                                </div>
+                            </ItemTemplate>
+                            <NoItemsTemplate><div class="autocomplete-empty">No se encontraron libros activos.</div></NoItemsTemplate>
+                        </MudAutocomplete>
+                    </div>
+
+                    @if (_lines.Count == 0)
+                    {
+                        <EmptyState Icon="@Icons.Material.Outlined.MenuBook" Title="Sin libros"
+                                    Message="@(_submitted ? "Agregue al menos un libro a la orden." : "Busque y agregue los libros que va a pedir.")" />
+                    }
+                    else
+                    {
+                        <div class="table-scroll">
+                            <MudSimpleTable Dense="true" Elevation="0" Class="tl-table doc-lines">
+                                <thead>
+                                    <tr>
+                                        <th>Libro</th>
+                                        <th class="doc-lines__qty">Cantidad *</th>
+                                        <th class="doc-lines__money">Costo unit. *</th>
+                                        <th class="doc-lines__qty">Desc. %</th>
+                                        <th class="text-right">IVA</th>
+                                        <th class="text-right">Total</th>
+                                        <th class="tl-table__actions"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (LineRow line in _lines)
+                                    {
+                                        LineAmounts amounts = line.Amounts;
+                                        <tr @key="line.BookId">
+                                            <td class="doc-lines__title">
+                                                <div class="cell-primary">@line.Title</div>
+                                                <div class="cell-secondary">@line.Code @(line.Isbn is null ? "" : $"· {line.Isbn}")</div>
+                                                @if (_submitted && line.Error is { } error)
+                                                {
+                                                    <div class="field-error">@error</div>
+                                                }
+                                            </td>
+                                            <td>
+                                                <MudNumericField T="int?" @bind-Value="line.Quantity" Min="1" Max="100000" Immediate="true"
+                                                                 Error="@(_submitted && line.QuantityError is not null)"
+                                                                 Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Cantidad de {line.Title}")" />
+                                            </td>
+                                            <td>
+                                                <MudNumericField T="decimal?" @bind-Value="line.UnitCost" Min="0.01m" Max="999999.99m" Format="N2"
+                                                                 HideSpinButtons="true" Immediate="true"
+                                                                 Error="@(_submitted && line.CostError is not null)"
+                                                                 Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Costo de {line.Title}")" />
+                                            </td>
+                                            <td>
+                                                <MudNumericField T="decimal" @bind-Value="line.DiscountPercent" Min="0m" Max="100m" Format="0.##"
+                                                                 HideSpinButtons="true" Immediate="true"
+                                                                 Variant="Variant.Outlined" Margin="Margin.Dense" aria-label="@($"Descuento de {line.Title}")" />
+                                            </td>
+                                            <td class="number">
+                                                @amounts.Tax.ToString("N2")
+                                                <div class="cell-secondary">@line.TaxPercent.ToString("0.##") %</div>
+                                            </td>
+                                            <td class="number">@amounts.Total.ToString("N2")</td>
+                                            <td class="tl-table__actions">
+                                                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" Color="Color.Error"
+                                                               aria-label="@($"Quitar {line.Title}")" OnClick="() => _lines.Remove(line)" Disabled="_saving" />
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </div>
+
+                        <dl class="doc-totals">
+                            <dt>Subtotal</dt><dd>@Symbol @_lines.Sum(line => line.Amounts.Subtotal).ToString("N2")</dd>
+                            <dt>Descuento</dt><dd>− @Symbol @_lines.Sum(line => line.Amounts.Discount).ToString("N2")</dd>
+                            <dt>IVA</dt><dd>@Symbol @_lines.Sum(line => line.Amounts.Tax).ToString("N2")</dd>
+                            <dt class="doc-totals__grand">Total</dt><dd class="doc-totals__grand">@Symbol @_lines.Sum(line => line.Amounts.Total).ToString("N2")</dd>
+                        </dl>
+                    }
+
+                    <div class="form-actions">
+                        <MudButton Href="@(Id is null ? "/compras" : $"/compras/{Id}")" Variant="Variant.Text" Disabled="_saving">Cancelar</MudButton>
+                        @if (IsDirect)
+                        {
+                            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Outlined.MoveToInbox" Disabled="_saving"
+                                       OnClick="() => _action = SubmitAction.Direct">
+                                @(_saving ? "Registrando…" : "Registrar y recibir")
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Save" Disabled="_saving"
+                                       OnClick="() => _action = SubmitAction.Save">
+                                Guardar borrador
+                            </MudButton>
+                            @if (Session.HasPermission(AppPermissions.PurchasesApprove))
+                            {
+                                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Outlined.Send" Disabled="_saving"
+                                           OnClick="() => _action = SubmitAction.SaveAndIssue">
+                                    @(_saving ? "Guardando…" : "Guardar y emitir")
+                                </MudButton>
+                            }
+                        }
+                    </div>
+                </Panel>
+            </div>
+        </EditForm>
+    }
+    else
+    {
+        <div class="layout-stack">
+            <div class="panel">
+                <dl class="detail-list">
+                    <dt>Proveedor</dt>
+                    <dd><a href="@($"/proveedores/{_order!.SupplierId}")">@_order.SupplierName</a> · @_order.SupplierCode @(_order.SupplierNit is null ? "" : $"· NIT {_order.SupplierNit}")</dd>
+                    <dt>Emisión</dt>
+                    <dd>@_order.IssueDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @_order.Branch</dd>
+                    <dt>Entrega esperada</dt>
+                    <dd>@(_order.ExpectedDate?.ToString("dd/MM/yyyy") ?? "Sin fecha")</dd>
+                    <dt>Moneda</dt>
+                    <dd>@_order.CurrencyCode @(_order.ExchangeRate == 1 ? "" : $"· tipo de cambio {_order.ExchangeRate:N4}")</dd>
+                    <dt>Solicitada por</dt>
+                    <dd>@(_order.RequestedBy ?? "—")</dd>
+                    @if (!string.IsNullOrWhiteSpace(_order.Notes))
+                    {
+                        <dt>Observaciones</dt>
+                        <dd><p class="notes-block">@_order.Notes</p></dd>
+                    }
+                </dl>
+
+                <div class="form-actions">
+                    <MudButton Href="/compras" Variant="Variant.Text">Volver</MudButton>
+                    @if (_order.CanCancel && Session.HasPermission(AppPermissions.PurchasesCancel))
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Outlined.Cancel"
+                                   OnClick="CancelOrderAsync" Disabled="_saving">
+                            Cancelar orden
+                        </MudButton>
+                    }
+                    @if (_order.CanReceive && Session.HasPermission(AppPermissions.PurchasesReceive))
+                    {
+                        <MudButton Href="@($"/recepciones/nueva?orden={_order.Id}")" Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Outlined.MoveToInbox">
+                            Registrar recepción
+                        </MudButton>
+                    }
+                </div>
+            </div>
+
+            <Panel Title="Libros" Icon="@Icons.Material.Outlined.MenuBook">
+                <div class="table-scroll">
+                    <MudTable Items="_order.Lines" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table">
+                        <HeaderContent>
+                            <MudTh>Libro</MudTh>
+                            <MudTh Class="text-right">Pedido</MudTh>
+                            <MudTh Class="text-right">Recibido</MudTh>
+                            <MudTh Class="text-right">Pendiente</MudTh>
+                            <MudTh Class="text-right col-optional">Costo</MudTh>
+                            <MudTh Class="text-right col-optional">Desc.</MudTh>
+                            <MudTh Class="text-right">Total</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>
+                                <div class="cell-primary">@context.Title</div>
+                                <div class="cell-secondary">@context.BookCode @(context.Isbn is null ? "" : $"· {context.Isbn}")</div>
+                            </MudTd>
+                            <MudTd Class="number">@context.Quantity.ToString("N0")</MudTd>
+                            <MudTd Class="number">@context.Received.ToString("N0")</MudTd>
+                            <MudTd Class="number">@context.Pending.ToString("N0")</MudTd>
+                            <MudTd Class="number col-optional">@context.UnitCost.ToString("N2")</MudTd>
+                            <MudTd Class="number col-optional">@context.DiscountPercent.ToString("0.##") %</MudTd>
+                            <MudTd Class="number">@context.Total.ToString("N2")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </div>
+                <dl class="doc-totals">
+                    <dt>Subtotal</dt><dd>@_order.CurrencySymbol @_order.Subtotal.ToString("N2")</dd>
+                    <dt>Descuento</dt><dd>− @_order.CurrencySymbol @_order.Discount.ToString("N2")</dd>
+                    <dt>IVA</dt><dd>@_order.CurrencySymbol @_order.Tax.ToString("N2")</dd>
+                    <dt class="doc-totals__grand">Total</dt><dd class="doc-totals__grand">@_order.CurrencySymbol @_order.Total.ToString("N2")</dd>
+                </dl>
+            </Panel>
+
+            <Panel Title="Recepciones" Icon="@Icons.Material.Outlined.MoveToInbox" Subtitle="Ingresos a inventario de esta orden.">
+                @if (_receptions is null)
+                {
+                    <LoadingState Rows="2" />
+                }
+                else if (_receptions.Count == 0)
+                {
+                    <EmptyState Icon="@Icons.Material.Outlined.Inbox" Title="Sin recepciones" Message="Todavía no se ha recibido mercadería de esta orden." />
+                }
+                else
+                {
+                    <nav class="link-list" aria-label="Recepciones de la orden">
+                        @foreach (ReceptionListItemResponse reception in _receptions)
+                        {
+                            <a href="@($"/recepciones/{reception.Id}")" class="link-list__item">
+                                <span class="link-list__icon" aria-hidden="true"><MudIcon Icon="@Icons.Material.Outlined.MoveToInbox" Size="Size.Small" /></span>
+                                <span class="link-list__text">
+                                    <span class="link-list__title">@reception.Number · @reception.ReceivedAt.ToLocalTime().ToString("dd/MM/yyyy")</span>
+                                    <span class="link-list__description">
+                                        @reception.AcceptedUnits.ToString("N0") aceptadas
+                                        @(reception.RejectedUnits > 0 ? $"· {reception.RejectedUnits:N0} rechazadas" : "")
+                                        · @reception.Status
+                                    </span>
+                                </span>
+                                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Class="link-list__chevron" />
+                            </a>
+                        }
+                    </nav>
+                }
+            </Panel>
+        </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private enum SubmitAction { Save, SaveAndIssue, Direct }
+
+    private PurchaseOrderCatalogsResponse? _catalogs;
+    private IReadOnlyCollection<CatalogOptionResponse> _warehouses = [];
+    private PurchaseOrderResponse? _order;
+    private List<ReceptionListItemResponse>? _receptions;
+    private readonly HeaderModel _header = new();
+    private readonly List<LineRow> _lines = [];
+    private int? _warehouseId;
+    private MudAutocomplete<PurchaseBookOptionResponse>? _bookSearch;
+    private PurchaseBookOptionResponse? _bookToAdd;
+    private SubmitAction _action;
+    private string? _loadError;
+    private bool _saving;
+    private bool _submitted;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+    private List<BreadcrumbItem> _breadcrumbs = [];
+
+    /// <summary>Compra directa (página /compras/directa): registra y recibe en un paso.</summary>
+    [Parameter]
+    public bool Direct { get; set; }
+
+    private bool IsDirect => Direct && Id is null;
+
+    private bool Editable => Id is null || (_order?.CanEdit == true && Session.HasPermission(AppPermissions.PurchasesUpdate));
+
+    private string? RequiredPermissionMissing =>
+        Id is not null ? null
+        : !Session.HasPermission(AppPermissions.PurchasesCreate) ? AppPermissions.PurchasesCreate
+        : IsDirect && !Session.HasPermission(AppPermissions.PurchasesApprove) ? AppPermissions.PurchasesApprove
+        : IsDirect && !Session.HasPermission(AppPermissions.PurchasesReceive) ? AppPermissions.PurchasesReceive
+        : null;
+
+    private string TitleText => Id is null
+        ? IsDirect ? "Compra directa" : "Nueva orden de compra"
+        : _order is null ? "Orden de compra" : $"Orden {_order.Number}";
+
+    private string? DescriptionText => Id is null
+        ? IsDirect
+            ? "Registre lo comprado y recibido en un solo paso."
+            : "Seleccione el proveedor y los libros; puede guardarla como borrador o emitirla."
+        : _order?.SupplierName;
+
+    private CatalogOptionResponse? SelectedSupplier => _catalogs?.Suppliers.FirstOrDefault(item => item.Id == _header.SupplierId)
+        ?? (_order is not null && _order.SupplierId == _header.SupplierId
+            ? new CatalogOptionResponse { Id = _order.SupplierId, Code = _order.SupplierCode, Name = _order.SupplierName }
+            : null);
+
+    private CurrencyOptionResponse? SelectedCurrency => _catalogs?.Currencies.FirstOrDefault(item => item.Id == _header.CurrencyId);
+
+    private bool IsDefaultCurrency => SelectedCurrency?.IsDefault ?? true;
+
+    private string Symbol => SelectedCurrency?.Symbol ?? "Q";
+
+    private DateTime? ExpectedDate
+    {
+        get => _header.ExpectedDate?.ToDateTime(TimeOnly.MinValue);
+        set => _header.ExpectedDate = value is null ? null : DateOnly.FromDateTime(value.Value);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _breadcrumbs =
+        [
+            new("Inicio", "/"),
+            new("Órdenes de compra", "/compras"),
+            new(Id is null ? (IsDirect ? "Compra directa" : "Nueva") : "Detalle", null, disabled: true)
+        ];
+
+        if (RequiredPermissionMissing is not null)
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadError = null;
+
+        Task<ApiResult<PurchaseOrderCatalogsResponse>> catalogsTask = PurchasesApi.GetCatalogsAsync();
+        Task<ApiResult<PurchaseOrderResponse>>? orderTask = Id is null ? null : PurchasesApi.GetAsync(Id.Value);
+
+        ApiResult<PurchaseOrderCatalogsResponse> catalogs = await catalogsTask;
+
+        if (!catalogs.Succeeded)
+        {
+            _loadError = catalogs.Message;
+            return;
+        }
+
+        _catalogs = catalogs.Data!;
+        _header.CurrencyId ??= _catalogs.Currencies.FirstOrDefault(item => item.IsDefault)?.Id;
+
+        if (IsDirect)
+        {
+            ApiResult<ReceptionCatalogsResponse> warehouses = await ReceptionsApi.GetCatalogsAsync();
+            _warehouses = warehouses.Data?.Warehouses ?? [];
+            _warehouseId ??= _warehouses.FirstOrDefault()?.Id;
+        }
+
+        if (orderTask is null)
+        {
+            return;
+        }
+
+        ApiResult<PurchaseOrderResponse> order = await orderTask;
+
+        if (!order.Succeeded || order.Data is null)
+        {
+            _loadError = order.Message;
+            return;
+        }
+
+        SetOrder(order.Data);
+    }
+
+    private void SetOrder(PurchaseOrderResponse order)
+    {
+        _order = order;
+        _header.SupplierId = order.SupplierId;
+        _header.CurrencyId = order.CurrencyId;
+        _header.ExchangeRate = order.ExchangeRate == 1 ? null : order.ExchangeRate;
+        _header.ExpectedDate = order.ExpectedDate;
+        _header.Notes = order.Notes;
+
+        _lines.Clear();
+        _lines.AddRange(order.Lines.Select(line => new LineRow
+        {
+            BookId = line.BookId,
+            Code = line.BookCode,
+            Title = line.Title,
+            Isbn = line.Isbn,
+            TaxPercent = line.TaxPercent,
+            Quantity = (int)line.Quantity,
+            UnitCost = line.UnitCost,
+            DiscountPercent = line.DiscountPercent,
+            Notes = line.Notes
+        }));
+
+        if (!order.CanEdit)
+        {
+            _ = LoadReceptionsAsync();
+        }
+    }
+
+    private async Task LoadReceptionsAsync()
+    {
+        ApiResult<PagedResponse<ReceptionListItemResponse>> result =
+            await ReceptionsApi.GetPagedAsync(new ReceptionQuery { PurchaseOrderId = Id, PageSize = 50 });
+        _receptions = result.Data?.Items.ToList() ?? [];
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task<IEnumerable<CatalogOptionResponse>> SearchSuppliersAsync(string? text, CancellationToken _) =>
+        Task.FromResult((_catalogs?.Suppliers ?? []).Where(item => SearchText.Matches(item.Name, text) || SearchText.Matches(item.Code, text)));
+
+    private async Task<IEnumerable<PurchaseBookOptionResponse>> SearchBooksAsync(string? text, CancellationToken token)
+    {
+        ApiResult<List<PurchaseBookOptionResponse>> result = await PurchasesApi.SearchBooksAsync(text, token);
+        return result.Data?.Where(book => _lines.All(line => line.BookId != book.Id)) ?? [];
+    }
+
+    private async Task AddBook(PurchaseBookOptionResponse? book)
+    {
+        if (book is null || _lines.Any(line => line.BookId == book.Id))
+        {
+            return;
+        }
+
+        if (_lines.Count >= SavePurchaseOrderRequest.MaxLines)
+        {
+            Snackbar.Add($"La orden admite como máximo {SavePurchaseOrderRequest.MaxLines} libros.", Severity.Warning);
+            return;
+        }
+
+        _lines.Add(new LineRow
+        {
+            BookId = book.Id,
+            Code = book.Code,
+            Title = book.Title,
+            Isbn = book.Isbn,
+            TaxPercent = book.TaxPercent,
+            Quantity = 1,
+            UnitCost = book.LastCost
+        });
+
+        _bookToAdd = null;
+
+        if (_bookSearch is not null)
+        {
+            await _bookSearch.ClearAsync();
+        }
+    }
+
+    private SavePurchaseOrderRequest BuildRequest() => new()
+    {
+        SupplierId = _header.SupplierId,
+        CurrencyId = _header.CurrencyId,
+        ExchangeRate = IsDefaultCurrency ? null : _header.ExchangeRate,
+        ExpectedDate = _header.ExpectedDate,
+        Notes = _header.Notes,
+        Lines = _lines
+            .Select(line => new PurchaseOrderLineRequest
+            {
+                BookId = line.BookId,
+                Quantity = line.Quantity,
+                UnitCost = line.UnitCost,
+                DiscountPercent = line.DiscountPercent,
+                Notes = line.Notes
+            })
+            .ToList()
+    };
+
+    private async Task SubmitAsync()
+    {
+        _submitted = true;
+
+        if (_header.SupplierId is null || _lines.Count == 0 || _lines.Any(line => line.Error is not null) ||
+            (!IsDefaultCurrency && _header.ExchangeRate is not > 0))
+        {
+            await OnInvalidSubmitAsync();
+            return;
+        }
+
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            if (_action == SubmitAction.Direct)
+            {
+                ApiResult<ReceptionResponse> received = await ReceptionsApi.RegisterDirectAsync(new DirectPurchaseRequest
+                {
+                    Order = BuildRequest(),
+                    WarehouseId = _warehouseId,
+                    SupplierDocumentSeries = _header.SupplierDocumentSeries,
+                    SupplierDocumentNumber = _header.SupplierDocumentNumber,
+                    Notes = _header.Notes
+                });
+
+                if (!received.Succeeded)
+                {
+                    _saveResult = received;
+                    return;
+                }
+
+                Snackbar.Add($"Compra {received.Data!.PurchaseOrderNumber} registrada y recibida ({received.Data.Number}). El inventario fue actualizado.", Severity.Success);
+                Navigation.NavigateTo($"/recepciones/{received.Data.Id}");
+                return;
+            }
+
+            ApiResult<PurchaseOrderResponse> saved = Id is null
+                ? await PurchasesApi.CreateAsync(BuildRequest())
+                : await PurchasesApi.UpdateAsync(Id.Value, BuildRequest());
+
+            if (!saved.Succeeded)
+            {
+                _saveResult = saved;
+                return;
+            }
+
+            if (_action == SubmitAction.SaveAndIssue)
+            {
+                ApiResult<PurchaseOrderResponse> issued = await PurchasesApi.IssueAsync(saved.Data!.Id);
+
+                if (!issued.Succeeded)
+                {
+                    Snackbar.Add($"La orden {saved.Data.Number} se guardó como borrador, pero no se pudo emitir: {issued.Message}", Severity.Warning);
+                    Navigation.NavigateTo($"/compras/{saved.Data.Id}", forceLoad: false);
+                    return;
+                }
+
+                Snackbar.Add($"Orden {issued.Data!.Number} emitida.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Orden {saved.Data!.Number} guardada como borrador.", Severity.Success);
+            }
+
+            Navigation.NavigateTo("/compras");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CancelOrderAsync()
+    {
+        string? reason = await Dialogs.AskReasonAsync(
+            $"Cancelar orden {_order!.Number}",
+            "La orden no podrá recibirse ni editarse. El motivo quedará en sus observaciones.",
+            "Cancelar orden");
+
+        if (reason is null)
+        {
+            return;
+        }
+
+        _saving = true;
+        ApiResult<PurchaseOrderResponse> result = await PurchasesApi.CancelAsync(_order.Id, reason);
+        _saving = false;
+
+        if (result.Succeeded)
+        {
+            Snackbar.Add($"Orden {_order.Number} cancelada.", Severity.Success);
+            SetOrder(result.Data!);
+        }
+        else
+        {
+            Snackbar.Add(result.Message, Severity.Error);
+        }
+    }
+
+    private async Task OnInvalidSubmitAsync()
+    {
+        _submitted = true;
+        _showInvalid = true;
+        _saveResult = null;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("tikalLibros.scrollToFirstError");
+    }
+
+    /// <summary>Datos de cabecera validados en el formulario.</summary>
+    private sealed class HeaderModel
+    {
+        public int? SupplierId { get; set; }
+
+        public int? CurrencyId { get; set; }
+
+        [Range(typeof(decimal), "0.000001", "100000", ErrorMessage = "El tipo de cambio debe ser mayor que 0.")]
+        public decimal? ExchangeRate { get; set; }
+
+        public DateOnly? ExpectedDate { get; set; }
+
+        [StringLength(1000, ErrorMessage = "Las observaciones no pueden superar los 1000 caracteres.")]
+        [PlainText]
+        public string? Notes { get; set; }
+
+        [StringLength(30, ErrorMessage = "La serie no puede superar los 30 caracteres.")]
+        [RegularExpression("^[A-Za-z0-9-]+$", ErrorMessage = "La serie solo admite letras sin tildes, números y guion.")]
+        public string? SupplierDocumentSeries { get; set; }
+
+        [StringLength(20, ErrorMessage = "El número de factura no puede superar los 20 dígitos.")]
+        [RegularExpression("^[0-9]+$", ErrorMessage = "El número de factura solo admite dígitos.")]
+        [RequiredWhen(nameof(SupplierDocumentSeries), "Indique el número de la factura de esa serie.")]
+        public string? SupplierDocumentNumber { get; set; }
+    }
+
+    /// <summary>Línea editable con los datos del libro para mostrarla.</summary>
+    private sealed class LineRow
+    {
+        public int BookId { get; init; }
+
+        public string Code { get; init; } = string.Empty;
+
+        public string Title { get; init; } = string.Empty;
+
+        public string? Isbn { get; init; }
+
+        public decimal TaxPercent { get; init; }
+
+        public int? Quantity { get; set; }
+
+        public decimal? UnitCost { get; set; }
+
+        public decimal DiscountPercent { get; set; }
+
+        public string? Notes { get; set; }
+
+        public string? QuantityError => Quantity is null or < 1 or > 100000 ? "La cantidad debe ser un entero entre 1 y 100,000." : null;
+
+        public string? CostError =>
+            UnitCost is null or < 0.01m or > 999999.99m ? "Indique un costo unitario entre 0.01 y 999,999.99."
+            : decimal.Round(UnitCost.Value, 2) != UnitCost.Value ? "El costo admite como máximo 2 decimales."
+            : null;
+
+        public string? DiscountError => DiscountPercent is < 0 or > 100 ? "El descuento debe estar entre 0 % y 100 %." : null;
+
+        public string? Error => QuantityError ?? CostError ?? DiscountError;
+
+        /// <summary>Mismo cálculo que la API (costo sin IVA, descuento y luego impuesto).</summary>
+        public LineAmounts Amounts
+        {
+            get
+            {
+                decimal subtotal = Round((Quantity ?? 0) * (UnitCost ?? 0));
+                decimal discount = Round(subtotal * DiscountPercent / 100m);
+                decimal tax = Round((subtotal - discount) * TaxPercent / 100m);
+                return new LineAmounts(subtotal, discount, tax, subtotal - discount + tax);
+            }
+        }
+
+        private static decimal Round(decimal value) => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private readonly record struct LineAmounts(decimal Subtotal, decimal Discount, decimal Tax, decimal Total);
+}

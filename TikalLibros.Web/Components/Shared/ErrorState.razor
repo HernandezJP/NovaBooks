@@ -1,0 +1,24 @@
+<div class="state state--error" role="alert">
+    <MudIcon Icon="@Icons.Material.Outlined.ErrorOutline" Color="Color.Error" Size="Size.Large" Class="state__icon" />
+    <MudText Typo="Typo.subtitle1" Class="state__title">@Title</MudText>
+    <MudText Typo="Typo.body2" Class="state__message">@Message</MudText>
+    @if (OnRetry.HasDelegate)
+    {
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh" Class="state__action"
+                   OnClick="OnRetry">
+            Reintentar
+        </MudButton>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string Title { get; set; } = "No fue posible cargar la información";
+
+    [Parameter, EditorRequired]
+    public string Message { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback OnRetry { get; set; }
+}

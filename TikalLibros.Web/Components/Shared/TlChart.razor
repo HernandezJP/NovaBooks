@@ -1,0 +1,113 @@
+@* Gráfico MudChart con la paleta de la aplicación (validada para daltonismo,
+   en orden fijo) y una tabla equivalente para lectores de pantalla. *@
+@using System.Globalization
+@using MudBlazor.Charts
+
+@if (Labels.Count == 0 || Series.All(line => line.Values.All(value => value == 0)))
+{
+    <EmptyState Icon="@Icons.Material.Outlined.BarChart" Title="Sin datos" Message="@EmptyMessage" />
+}
+else
+{
+    <figure class="@(Type is ChartType.Donut or ChartType.Pie ? "tl-chart tl-chart--radial" : "tl-chart")" aria-label="@AriaLabel">
+        <MudChart T="double" ChartType="Type" ChartLabels="_labels" ChartSeries="_series" ChartOptions="_options"
+                  Width="100%" Height="@Height" LegendPosition="Position.Bottom" CanHideSeries="false" />
+        @* Tabla equivalente para lectores de pantalla. Va dentro de un div oculto:
+           una tabla no respeta height y, aun oculta, agregaba alto a la página. *@
+        <div class="sr-only">
+            <table>
+                <caption>@AriaLabel</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Concepto</th>
+                        @foreach (ChartLine line in Series)
+                        {
+                            <th scope="col">@line.Name</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int index = 0; index < Labels.Count; index++)
+                    {
+                        <tr>
+                            <th scope="row">@Labels[index]</th>
+                            @foreach (ChartLine line in Series)
+                            {
+                                <td>@Format(index < line.Values.Count ? line.Values[index] : 0)</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </figure>
+}
+
+@code {
+    /// <summary>Paleta categórica en orden fijo: azul, terracota, verde azulado, ocre, violeta.</summary>
+    public static readonly string[] Palette = ["#2F5C9A", "#C4562F", "#0E9384", "#D9A02B", "#8452A8"];
+
+    [Parameter]
+    public ChartType Type { get; set; } = ChartType.Bar;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<string> Labels { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ChartLine> Series { get; set; } = [];
+
+    [Parameter]
+    public string Height { get; set; } = "260px";
+
+    [Parameter, EditorRequired]
+    public string AriaLabel { get; set; } = string.Empty;
+
+    /// <summary>Valores en quetzales (si no, cantidades).</summary>
+    [Parameter]
+    public bool Money { get; set; } = true;
+
+    [Parameter]
+    public string EmptyMessage { get; set; } = "No hay datos en el período.";
+
+    private string[] _labels = [];
+    private List<ChartSeries<double>> _series = [];
+    private IChartOptions _options = new ChartOptions();
+
+    protected override void OnParametersSet()
+    {
+        bool radial = Type is ChartType.Donut or ChartType.Pie;
+
+        _labels = Labels.ToArray();
+        _series = Series
+            .Select(line => new ChartSeries<double>
+            {
+                Name = line.Name,
+                Data = new ChartData<double>(line.Values.Select(value => (double)value).ToList())
+            })
+            .ToList();
+
+        bool legend = radial || Series.Count > 1;
+        Func<double, string> axis = value => Money ? $"Q{value.ToString("N0", CultureInfo.InvariantCulture)}" : value.ToString("N0", CultureInfo.InvariantCulture);
+
+        _options = Type switch
+        {
+            ChartType.Line => new LineChartOptions
+            {
+                ChartPalette = Palette, ShowLegend = legend, ShowToolTips = true, LineStrokeWidth = 2, ShowDataMarkers = false,
+                YAxisToStringFunc = axis, MaxNumYAxisTicks = 6, XAxisLines = false, XAxisLabelRotation = Labels.Count > 12 ? 45 : 0
+            },
+            ChartType.Donut => new DonutChartOptions { ChartPalette = Palette, ShowLegend = true, ShowToolTips = true, ShowAsPercentage = true },
+            ChartType.Pie => new PieChartOptions { ChartPalette = Palette, ShowLegend = true, ShowToolTips = true, ShowAsPercentage = true },
+            _ => new BarChartOptions
+            {
+                ChartPalette = Palette, ShowLegend = legend, ShowToolTips = true, YAxisToStringFunc = axis, MaxNumYAxisTicks = 6,
+                XAxisLines = false, XAxisLabelRotation = Labels.Count > 12 ? 45 : 0
+            }
+        };
+    }
+
+    private string Format(decimal value) => Money ? $"Q {value:N2}" : value.ToString("N0");
+
+    /// <summary>Una serie del gráfico; en dona o pastel, una sola serie con un valor por etiqueta.</summary>
+    public sealed record ChartLine(string Name, IReadOnlyList<decimal> Values);
+}

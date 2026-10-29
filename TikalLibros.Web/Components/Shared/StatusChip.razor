@@ -1,0 +1,14 @@
+<span class="status-pill @(IsActive ? "status-pill--active" : "status-pill--inactive")">
+    @(IsActive ? ActiveText : InactiveText)
+</span>
+
+@code {
+    [Parameter]
+    public bool IsActive { get; set; }
+
+    [Parameter]
+    public string ActiveText { get; set; } = "Activo";
+
+    [Parameter]
+    public string InactiveText { get; set; } = "Inactivo";
+}

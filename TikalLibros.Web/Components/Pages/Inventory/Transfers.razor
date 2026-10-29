@@ -1,0 +1,162 @@
+@page "/inventario/traslados"
+@attribute [RequirePermission(AppPermissions.InventoryTransfer)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Inventory
+@inject InventoryApi InventoryApi
+@inject NavigationManager Navigation
+
+<PageTitle>Traslados | Tikal Libros</PageTitle>
+
+<PageHeader Title="Traslados entre almacenes"
+            Description="Movimiento de existencias de un almacén a otro, conservando lotes y costos."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        <MudButton Href="/inventario/traslados/nuevo" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.CompareArrows">
+            Nuevo traslado
+        </MudButton>
+    </Actions>
+</PageHeader>
+
+<Panel Title="Traslados" Subtitle="Busque por número, título o código del libro." Icon="@Icons.Material.Outlined.CompareArrows">
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_query.Search" Placeholder="Número o libro"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="_ => ReloadAsync()"
+                      OnClearButtonClick="_ => ReloadAsync()" MaxLength="100"
+                      aria-label="Buscar traslados" Class="list-toolbar__search tl-filter-plain" />
+        <MudSelect T="int?" Value="_query.WarehouseId" ValueChanged="WarehouseChangedAsync" Label="Almacén" Clearable="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            @foreach (CatalogOptionResponse warehouse in _warehouses)
+            {
+                <MudSelectItem T="int?" Value="warehouse.Id">@warehouse.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSwitch T="bool" Value="_query.IncludeAnnulled" ValueChanged="AnnulledChangedAsync" Color="Color.Primary" Label="Incluir anulados" />
+    </div>
+
+    @if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar los traslados" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is null)
+    {
+        <LoadingState />
+    }
+    else if (_page.Items.Count == 0)
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.CompareArrows" Title="Sin traslados"
+                    Message="Registre un traslado para mover existencias entre almacenes o sucursales." />
+    }
+    else
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Breakpoint="Breakpoint.None" Class="tl-table tl-table--clickable"
+                      OnRowClick="@((TableRowClickEventArgs<TransferListItemResponse> args) => Navigation.NavigateTo($"/inventario/traslados/{args.Item!.Id}"))">
+                <HeaderContent>
+                    <MudTh>Traslado</MudTh>
+                    <MudTh>Origen</MudTh>
+                    <MudTh>Destino</MudTh>
+                    <MudTh Class="text-right">Libros</MudTh>
+                    <MudTh Class="text-right">Unidades</MudTh>
+                    <MudTh Class="col-optional">Registró</MudTh>
+                    <MudTh>Estado</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.Number</div>
+                        <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                    </MudTd>
+                    <MudTd>
+                        <div>@context.SourceWarehouse</div>
+                        <div class="cell-secondary">@context.SourceBranch</div>
+                    </MudTd>
+                    <MudTd>
+                        <div>@context.TargetWarehouse</div>
+                        <div class="cell-secondary">@context.TargetBranch</div>
+                    </MudTd>
+                    <MudTd Class="number">@context.Books.ToString("N0")</MudTd>
+                    <MudTd Class="number">@context.Units.ToString("N0")</MudTd>
+                    <MudTd Class="col-optional">@(context.Employee ?? "—")</MudTd>
+                    <MudTd>
+                        <DocumentStatus Code="@(context.Annulled ? "ANULADA" : "PROCESADA")" Text="@(context.Annulled ? "Anulado" : "Procesado")" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems"
+                   TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+</Panel>
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Traslados", null, disabled: true)
+    ];
+
+    private readonly TransferQuery _query = new();
+    private IReadOnlyCollection<CatalogOptionResponse> _warehouses = [];
+    private PagedResponse<TransferListItemResponse>? _page;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApiResult<InventoryCatalogsResponse> catalogs = await InventoryApi.GetCatalogsAsync();
+        _warehouses = catalogs.Data?.Warehouses ?? [];
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+        _error = null;
+
+        ApiResult<PagedResponse<TransferListItemResponse>> result = await InventoryApi.GetTransfersAsync(_query, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _page = result.Data;
+        _error = result.Succeeded ? null : result.Message;
+    }
+
+    private Task ReloadAsync()
+    {
+        _query.Page = 1;
+        return LoadAsync();
+    }
+
+    private Task WarehouseChangedAsync(int? warehouseId)
+    {
+        _query.WarehouseId = warehouseId;
+        return ReloadAsync();
+    }
+
+    private Task AnnulledChangedAsync(bool include)
+    {
+        _query.IncludeAnnulled = include;
+        return ReloadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _query.Page = page;
+        return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+}

@@ -1,0 +1,134 @@
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Organization
+@inject BranchesApi BranchesApi
+@inject WarehousesApi WarehousesApi
+
+<MudDialog>
+    <DialogContent>
+        @if (_branches is null)
+        {
+            <LoadingState Rows="3" />
+            <FormErrors Result="_saveResult" />
+        }
+        else
+        {
+            <EditForm Model="_model" OnValidSubmit="SaveAsync" OnInvalidSubmit="OnInvalidSubmit" id="warehouse-form">
+                <DataAnnotationsValidator />
+                <ServerValidator Result="_saveResult" />
+                <FormErrors Result="_saveResult" ShowInvalidHint="_showInvalid" />
+                <p class="required-legend">Los campos con <span aria-hidden="true">*</span> son obligatorios.</p>
+
+                <div class="form-grid">
+                    <MudTextField @bind-Value="_model.Name" For="@(() => _model.Name)" Label="Nombre *"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="150" Class="tl-filter-business" />
+                    <MudTextField T="string" Value="@(Warehouse?.Code ?? "Se asignará al guardar")" Label="Código"
+                                  HelperText="Lo asigna el sistema automáticamente."
+                                  ReadOnly="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    <MudSelect T="int?" @bind-Value="_model.BranchId" For="@(() => _model.BranchId)" Label="Sucursal *"
+                               HelperText="@(Warehouse is null ? null : "Solo cambia si el almacén no tiene existencias ni es el principal.")"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (CatalogOptionResponse branch in _branches)
+                        {
+                            <MudSelectItem T="int?" Value="branch.Id">@branch.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </div>
+                <MudTextField @bind-Value="_model.Description" For="@(() => _model.Description)" Label="Descripción"
+                              Lines="2" MaxLength="500" Counter="500" Variant="Variant.Outlined" Margin="Margin.Dense" Class="tl-filter-plain mt-2" />
+                <MudSwitch T="bool" @bind-Value="_model.IsMain" Color="Color.Primary" Disabled="@(Warehouse?.IsMain == true)"
+                           Label="Almacén principal de la sucursal" Class="mt-2" />
+                <p class="form-hint">
+                    @(Warehouse?.IsMain == true
+                        ? "Es el almacén principal. Para cambiarlo, marque otro almacén de la sucursal como principal."
+                        : "El primer almacén de una sucursal queda como principal automáticamente.")
+                </p>
+            </EditForm>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="() => Dialog.Cancel()" Disabled="_saving">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" form="warehouse-form"
+                   Disabled="@(_saving || _branches is null)">
+            @if (_saving)
+            {
+                <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+            }
+            Guardar
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance Dialog { get; set; } = default!;
+
+    /// <summary>Almacén a editar; null para crear.</summary>
+    [Parameter]
+    public WarehouseResponse? Warehouse { get; set; }
+
+    private SaveWarehouseRequest _model = new();
+    private IReadOnlyList<CatalogOptionResponse>? _branches;
+    private bool _saving;
+    private bool _showInvalid;
+    private IApiResultView? _saveResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Warehouse is not null)
+        {
+            _model = new SaveWarehouseRequest
+            {
+                BranchId = Warehouse.BranchId,
+                Name = Warehouse.Name,
+                Description = Warehouse.Description,
+                IsMain = Warehouse.IsMain
+            };
+        }
+
+        ApiResult<OrganizationCatalogsResponse> catalogs = await BranchesApi.GetCatalogsAsync();
+        _branches = catalogs.Data?.Branches;
+        _saveResult = catalogs.Succeeded ? null : catalogs;
+
+        if (Warehouse is null && _branches is { Count: > 0 })
+        {
+            _model.BranchId = _branches[0].Id;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_saving)
+        {
+            return;
+        }
+
+        _saving = true;
+        _showInvalid = false;
+        _saveResult = null;
+
+        try
+        {
+            ApiResult<WarehouseResponse> result = Warehouse is null
+                ? await WarehousesApi.CreateAsync(_model)
+                : await WarehousesApi.UpdateAsync(Warehouse.Id, _model);
+
+            if (result.Succeeded)
+            {
+                Dialog.Close(DialogResult.Ok(result.Data));
+                return;
+            }
+
+            _saveResult = result;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OnInvalidSubmit()
+    {
+        _showInvalid = true;
+        _saveResult = null;
+    }
+}

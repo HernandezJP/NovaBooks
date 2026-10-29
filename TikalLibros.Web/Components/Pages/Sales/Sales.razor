@@ -1,0 +1,200 @@
+@page "/ventas"
+@attribute [RequirePermission(AppPermissions.SalesView)]
+@implements IDisposable
+@using TikalLibros.Application.Common
+@using TikalLibros.Application.DTOs.Common
+@using TikalLibros.Application.DTOs.Sales
+@using TikalLibros.Web.Services.Reports
+@inject SalesApi SalesApi
+@inject SessionState Session
+@inject NavigationManager Navigation
+
+<PageTitle>Ventas | Tikal Libros</PageTitle>
+
+<PageHeader Title="Ventas"
+            Description="Ventas de mostrador y pedidos facturados, con sus pagos. Las anuladas se muestran tachadas."
+            Breadcrumbs="_breadcrumbs">
+    <Actions>
+        <ExportActions Build="BuildExportAsync" />
+        @if (Session.HasPermission(AppPermissions.SalesCreate))
+        {
+            <MudButton Href="/ventas/nueva" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.PointOfSale">
+                Nueva venta
+            </MudButton>
+        }
+    </Actions>
+</PageHeader>
+
+<Panel Title="Ventas" Icon="@Icons.Material.Outlined.ReceiptLong" Subtitle="Busque por número de venta o pedido, cliente o NIT; los filtros se combinan.">
+    <div class="list-toolbar">
+        <MudTextField @bind-Value="_query.Search" Placeholder="Venta, pedido, cliente o NIT"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Outlined.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                      DebounceInterval="400" OnDebounceIntervalElapsed="_ => ReloadAsync()"
+                      OnClearButtonClick="_ => FilterAsync(() => _query.Search = null)" MaxLength="100"
+                      aria-label="Buscar ventas" Class="list-toolbar__search tl-filter-plain" />
+        <MudSelect T="string" Value="_query.Status" ValueChanged="value => FilterAsync(() => _query.Status = value)" Label="Estado"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Class="list-toolbar__filter">
+            <MudSelectItem T="string" Value="@string.Empty">Todos</MudSelectItem>
+            @foreach (CatalogOptionResponse status in _statuses)
+            {
+                <MudSelectItem T="string" Value="status.Code">@status.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="int?" Value="_query.PaymentMethodId" ValueChanged="value => FilterAsync(() => _query.PaymentMethodId = value)" Label="Pagada con"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Clearable="true" Class="list-toolbar__filter">
+            @foreach (PaymentMethodResponse method in _methods)
+            {
+                <MudSelectItem T="int?" Value="method.Id">@method.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <div class="list-toolbar__range">
+            <MudDateRangePicker DateRange="_range" DateRangeChanged="value => FilterAsync(() => _range = value)" Label="Fechas" Clearable="true"
+                                MaxDate="DateTime.Today" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+        <MudCheckBox T="bool" Value="_query.WithBalance == true" ValueChanged="value => FilterAsync(() => _query.WithBalance = value ? true : null)"
+                     Label="Solo con saldo" Dense="true" Color="Color.Primary" />
+    </div>
+
+    @if (_loading && _page is null)
+    {
+        <LoadingState />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Title="No fue posible cargar las ventas" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_page is { Items.Count: 0 })
+    {
+        <EmptyState Icon="@Icons.Material.Outlined.ReceiptLong" Title="No hay ventas" Message="Ajuste la búsqueda o registre una venta." />
+    }
+    else if (_page is not null)
+    {
+        <div class="table-scroll">
+            <MudTable Items="_page.Items" Hover="true" Dense="true" Elevation="0" Loading="_loading" Breakpoint="Breakpoint.None"
+                      Class="tl-table tl-table--clickable"
+                      RowClassFunc="@((SaleListItemResponse item, int _) => item.Annulled ? "row-muted" : string.Empty)"
+                      OnRowClick="@((TableRowClickEventArgs<SaleListItemResponse> args) => Navigation.NavigateTo($"/ventas/{args.Item!.Id}"))">
+                <HeaderContent>
+                    <MudTh>Venta</MudTh>
+                    <MudTh>Cliente</MudTh>
+                    <MudTh>Estado</MudTh>
+                    <MudTh Class="col-optional">Vendedor</MudTh>
+                    <MudTh Class="text-right col-optional">Saldo</MudTh>
+                    <MudTh Class="text-right">Total</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>
+                        <div class="cell-primary">@context.Number</div>
+                        <div class="cell-secondary">@context.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm") @(context.OrderNumber is null ? "" : $"· {context.OrderNumber}")</div>
+                    </MudTd>
+                    <MudTd>
+                        <div class="cell-primary">@context.Customer</div>
+                        <div class="cell-secondary">@context.SaleType</div>
+                    </MudTd>
+                    <MudTd><DocumentStatus Code="@context.StatusCode" Text="@context.Status" /></MudTd>
+                    <MudTd Class="col-optional">@context.Employee</MudTd>
+                    <MudTd Class="number col-optional">@(context.Balance > 0 ? context.Balance.ToString("N2") : "—")</MudTd>
+                    <MudTd Class="number">Q @context.Total.ToString("N2")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
+        <ListPager Page="_page.Page" PageSize="_page.PageSize" TotalItems="_page.TotalItems" TotalPages="_page.TotalPages" PageChanged="PageChangedAsync" />
+    }
+</Panel>
+
+@code {
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Inicio", "/"),
+        new("Ventas", null, disabled: true),
+        new("Ventas", null, disabled: true)
+    ];
+
+    private readonly SaleQuery _query = new() { Status = string.Empty, PageSize = 15 };
+    private PagedResponse<SaleListItemResponse>? _page;
+    private IReadOnlyCollection<CatalogOptionResponse> _statuses = [];
+    private IReadOnlyCollection<PaymentMethodResponse> _methods = [];
+    private DateRange? _range;
+    private bool _loading;
+    private string? _error;
+    private CancellationTokenSource? _loadCancellation;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Task load = LoadAsync();
+        SaleCatalogsResponse? catalogs = (await SalesApi.GetCatalogsAsync()).Data;
+        _statuses = catalogs?.Statuses ?? [];
+        _methods = catalogs?.PaymentMethods ?? [];
+        await load;
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation = new CancellationTokenSource();
+        CancellationToken token = _loadCancellation.Token;
+        _loading = true;
+        _error = null;
+
+        _query.From = _range?.Start is { } start ? DateOnly.FromDateTime(start) : null;
+        _query.To = _range?.End is { } end ? DateOnly.FromDateTime(end) : null;
+
+        ApiResult<PagedResponse<SaleListItemResponse>> result = await SalesApi.GetPagedAsync(_query, token);
+
+        if (token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _page = result.Data ?? _page;
+        _error = result.Succeeded ? null : result.Message;
+        _loading = false;
+    }
+
+    private Task ReloadAsync()
+    {
+        _query.Page = 1;
+        return LoadAsync();
+    }
+
+    private Task FilterAsync(Action change)
+    {
+        change();
+        return ReloadAsync();
+    }
+
+    private Task PageChangedAsync(int page)
+    {
+        _query.Page = page;
+        return LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+    }
+
+    private async Task<ExportTable?> BuildExportAsync()
+    {
+        SaleQuery query = PagedExport.Copy(_query);
+        List<SaleListItemResponse> sales = await PagedExport.AllAsync((page, size) =>
+        {
+            query.Page = page;
+            query.PageSize = size;
+            return SalesApi.GetPagedAsync(query);
+        });
+
+        return new ExportTable($"ventas-{DateTime.Today:yyyyMMdd}", "Ventas", "Según los filtros de la pantalla",
+            [
+                new("Venta"), new("Fecha", ExportKind.DateTime), new("Cliente"), new("Condición"), new("Estado"), new("Pedido"),
+                new("Vendedor"), new("Total", ExportKind.Money), new("Pagado", ExportKind.Money), new("Saldo", ExportKind.Money), new("Anulada")
+            ],
+            sales.Select(sale => new object?[]
+            {
+                sale.Number, sale.Date, sale.Customer, sale.SaleType, sale.Status, sale.OrderNumber,
+                sale.Employee, sale.Total, sale.Paid, sale.Balance, sale.Annulled
+            }).ToList());
+    }
+}
